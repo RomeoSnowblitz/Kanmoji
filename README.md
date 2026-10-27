@@ -1,4 +1,4 @@
-# Kanji Builder
+# Kanmoji
 
 Use the **Create** page to combine symbols into words. Supports multiple languages.
 
