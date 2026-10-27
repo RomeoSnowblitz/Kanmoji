@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kanji Builder</title>
-  <link rel="stylesheet" href="style.css?v=0.7" />
+  <link rel="stylesheet" href="style.css?v=0.21" />
   <script src="translations.js?v=0.7"></script>
   <script defer src="symbols.js?v=0.7"></script>
   <script defer src="kanji-data.js?v=0.7"></script>
-  <script defer src="script.js?v=0.7"></script>
+  <script defer src="script.js?v=0.23"></script>
 </head>
 <body data-page="kanji">
   <header class="navbar">
@@ -46,7 +46,7 @@
   </header>
 
   <main>
-    <span class="app-version">v0.7a</span>
+    <span class="app-version">v0.7b</span>
     <h1 class="kanji-title">
       <span data-i18n="nav.kanji">Kanji</span>
       <span class="kanji-title-note">- <span data-i18n="kanji.englishNote">Note that currently all Definitions will only be in English at this time</span></span>
@@ -62,6 +62,7 @@
       <div class="kanji-row">
         <button type="button" id="kanji-starred-toggle" class="transfer-lang-chip kanji-chip" aria-pressed="false" data-i18n="kanji.starredList">Starred List</button>
         <button type="button" id="kanji-learn" class="transfer-lang-chip kanji-chip" data-i18n="kanji.learn">Learn</button>
+        <button type="button" id="kanji-add" class="transfer-lang-chip kanji-chip hidden">Add Kanji</button>
       </div>
       <div class="kanji-row">
         <div class="kanji-sort-wrap">
@@ -79,6 +80,7 @@
         <div class="kanji-detail-toolbar">
           <button type="button" id="kanji-detail-back" class="transfer-lang-chip" data-i18n="kanji.back">← Back</button>
           <button type="button" id="kanji-detail-close" class="transfer-lang-chip" data-i18n="kanji.close">Close</button>
+          <button type="button" id="kanji-detail-edit" class="transfer-lang-chip hidden" title="Double right-click a highlighted line to edit it">Edit</button>
           <div class="kanji-detail-nav">
             <button type="button" id="kanji-detail-prev" class="transfer-lang-chip kanji-detail-arrow" title="Previous" aria-label="Previous">
               <span class="kanji-detail-arrow-sign">‹</span>

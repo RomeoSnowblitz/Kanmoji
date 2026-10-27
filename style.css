@@ -2038,7 +2038,9 @@ body.ui-accent-gradient.ui-accent-scope-screen .play-game-card.selected
 
 .username-popup-content {
   box-sizing: border-box;
-  width: min(420px, 90vw);
+  width: min(560px, 92vw);
+  max-height: min(90vh, 760px);
+  overflow: auto;
   padding: 1.25rem;
   border: 2px solid var(--accent-color);
   border-radius: 10px;
@@ -2046,9 +2048,177 @@ body.ui-accent-gradient.ui-accent-scope-screen .play-game-card.selected
   color: var(--text-color);
 }
 
+.username-popup-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.username-popup-head h2 {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
 .username-popup-content h2 {
   margin-top: 0;
   color: var(--accent-color);
+}
+
+.afic-block {
+  margin-top: 1rem;
+}
+
+.afic-title {
+  margin: 0 0 0.35rem;
+  color: var(--accent-color);
+  font-size: 1rem;
+}
+
+.afic-note {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+.afic-langs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.afic-lang {
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--accent-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-color);
+  cursor: pointer;
+}
+
+.afic-lang:hover,
+.afic-lang.is-passed {
+  background: color-mix(in srgb, var(--accent-color) 16%, transparent);
+}
+
+.afic-lang.afic-remove {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.afic-lang.afic-remove:hover {
+  background: color-mix(in srgb, #ef4444 16%, transparent);
+  color: #ef4444;
+}
+
+.afic-test {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.afic-test.hidden {
+  display: none;
+}
+
+.afic-test-card {
+  box-sizing: border-box;
+  width: min(640px, 92vw);
+  max-height: min(90vh, 760px);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 2px solid var(--accent-color);
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: var(--text-color);
+}
+
+.afic-test-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.afic-test-head h2 {
+  margin: 0;
+  color: var(--accent-color);
+}
+
+.afic-test-close {
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--accent-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-color);
+  cursor: pointer;
+}
+
+.afic-copy {
+  margin: 0 0 0.75rem;
+  line-height: 1.45;
+}
+
+.afic-start,
+.afic-loading {
+  margin: 1rem 0 0;
+  color: var(--accent-color);
+  text-align: center;
+}
+
+.afic-start.is-wrong,
+.afic-result.is-wrong {
+  color: #ef4444;
+}
+
+.afic-result.is-correct {
+  color: #22c55e;
+}
+
+.afic-result,
+.afic-result-code {
+  margin: 0.4rem 0;
+  font-size: 1.25rem;
+  text-align: center;
+}
+
+.afic-test-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.afic-prompt {
+  margin-bottom: 0.85rem;
+  font-size: 2rem;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.afic-prompt.is-sentence {
+  font-size: 1.35rem;
+  line-height: 1.4;
+}
+
+.afic-prompt.is-radical {
+  font-size: 3.2rem;
+  line-height: 1.1;
+}
+
+.afic-test-card .kanji-play-box,
+.afic-test-card .kanji-play-options {
+  margin-top: 0.55rem;
 }
 
 .username-popup-content > label,
@@ -2079,6 +2249,7 @@ body.ui-accent-gradient.ui-accent-scope-screen .play-game-card.selected
 
 .username-popup-actions {
   display: flex;
+  flex: none;
   gap: 0.5rem;
   justify-content: flex-end;
 }
@@ -5036,12 +5207,83 @@ body.create-embedded main {
 }
 
 .learn-chart-section {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 280px);
+  justify-content: start;
+  gap: 0.75rem 1rem;
+  align-items: start;
   margin: 0.5rem 0 1rem;
+}
+
+.learn-plan {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  border: 1px solid var(--accent-color);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+}
+
+.learn-plan h2 {
+  margin: 0 0 0.55rem;
+  font-size: 1.05rem;
+}
+
+.learn-plan-empty,
+.learn-plan-note {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.learn-plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.learn-plan-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.learn-plan-remove {
+  border: 0;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.learn-plan-start {
+  margin-top: 0.75rem;
+}
+
+.learn-chart-note {
+  grid-column: 1;
+}
+
+@media (max-width: 800px) {
+  .learn-chart-section {
+    grid-template-columns: 1fr;
+  }
+
+  .learn-plan,
+  .learn-chart-note {
+    grid-column: 1;
+    grid-row: auto;
+  }
 }
 
 .learn-chart-wrap {
   overflow-x: auto;
   max-width: 100%;
+  grid-column: 1;
 }
 
 .learn-chart {
@@ -5074,9 +5316,12 @@ body.create-embedded main {
 }
 
 .learn-chart-cell {
-  display: block;
-  min-width: 6.5rem;
-  height: 2.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 8.5rem;
+  min-height: 2.6rem;
+  padding: 0.2rem 0.45rem;
   background: transparent;
   cursor: pointer;
 }
@@ -5101,10 +5346,29 @@ body.light-mode {
 }
 
 .learn-chart-cell {
-  font-size: 1.2rem;
-  line-height: 2.1rem;
+  font-size: 0.82rem;
+  line-height: 1.2;
   text-align: center;
   text-decoration: none;
+}
+
+a.learn-chart-cell,
+a.learn-chart-cell:visited,
+.learn-chart-pcts,
+.learn-chart-pct {
+  color: var(--accent-color);
+}
+
+.learn-chart-pcts {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.learn-chart-pct.is-golden,
+a.learn-chart-cell:visited .learn-chart-pct.is-golden {
+  color: #eab308;
 }
 
 a.learn-chart-cell .learn-chart-mark {
@@ -5123,6 +5387,105 @@ a.learn-chart-cell .learn-chart-mark {
 
 .learn-area-bar {
   margin-bottom: 0.5rem;
+}
+
+.learn-browse-sort-menu .kanji-sort-option {
+  color: var(--accent-color);
+}
+
+.learn-browse-sort-menu .kanji-sort-option:hover,
+.learn-browse-sort-menu .kanji-sort-option:focus-visible {
+  background: color-mix(in srgb, var(--accent-color) 16%, transparent);
+  color: var(--accent-color);
+}
+
+.learn-load-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  margin: 0;
+  background: color-mix(in srgb, var(--bg-color, #111) 55%, transparent);
+}
+
+.learn-load-screen .learn-plan-note {
+  margin-top: 0.85rem;
+}
+
+.kanji-learn-lessons.is-virtual > li:not(.learn-lesson-pad) {
+  box-sizing: border-box;
+}
+
+.kanji-learn-lessons.is-virtual button {
+  display: block;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanji-learn-lessons.is-virtual .learn-lesson-pad {
+  pointer-events: none;
+}
+
+.learn-browse-status {
+  margin: 0.4rem 0 0;
+  font-size: 0.9rem;
+  opacity: 0.8;
+}
+
+.learn-browse-grid {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  margin-top: 0.75rem;
+}
+
+.learn-browse-grid.is-sentence {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.learn-browse-grid .kanji-box-glyph {
+  font-size: 1.15rem;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.learn-browse-grid .kanji-box {
+  min-height: 5.6rem;
+  cursor: pointer;
+}
+
+.kanji-detail-glyph.is-long,
+.kanji-peek .kanji-detail-glyph.is-long {
+  font-size: 1.25rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.learn-example-row.is-sentence .kanji-part-chip {
+  max-width: 18rem;
+  align-items: flex-start;
+}
+
+.learn-example-row.is-sentence .kanji-part-glyph,
+.learn-example-row.is-sentence .kanji-part-name {
+  font-size: 0.92rem;
+  white-space: normal;
+  word-break: break-word;
+  text-align: left;
+}
+
+.learn-browse-grid .kanji-box-tag {
+  display: block;
+}
+
+.learn-browse-more {
+  grid-column: 1 / -1;
+  height: 1px;
+}
+
+a.kanji-chip {
+  display: inline-block;
+  text-decoration: none;
 }
 
 .learn-area-bar a.transfer-lang-chip {
@@ -5208,6 +5571,32 @@ a.learn-chart-cell .learn-chart-mark {
   font-size: 2.6rem;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+.learn-origin {
+  font-size: 0.42em;
+  font-weight: 500;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.learn-typo-line {
+  margin: 0.2rem 0;
+}
+
+.learn-typo-word {
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.learn-typo-word.is-wrong {
+  color: #ef4444;
+  text-decoration-color: #ef4444;
+}
+
+.learn-typo-word.is-right {
+  color: #22c55e;
+  text-decoration-color: #22c55e;
 }
 
 .kanji-play.is-sentence .vocab-play-word {
@@ -5484,6 +5873,80 @@ body.ui-accent-gradient.ui-accent-scope-screen .kanji-search {
   border-color: #ef4444;
 }
 
+.ox-keybind-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.ox-keybind-card {
+  box-sizing: border-box;
+  width: min(26rem, 100%);
+  padding: 0.9rem 1rem 1rem;
+  background: var(--card-bg);
+  color: var(--text-color);
+  border: 1px solid var(--accent-color);
+  border-radius: 10px;
+}
+
+.ox-keybind-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.ox-keybind-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.ox-keybind-save {
+  flex: none;
+  margin-left: auto;
+}
+
+.ox-keybind-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0.35rem 0;
+}
+
+.ox-keybind-name {
+  min-width: 0;
+}
+
+.ox-keybind-row.is-listening .ox-keybind-name {
+  color: var(--accent-color);
+}
+
+.ox-keybind-reset {
+  width: 100%;
+  margin-top: 0.75rem;
+  border-color: #ef4444;
+  background: #ef4444;
+  color: #fff;
+}
+
+.ox-key-hint {
+  margin-left: 0.4rem;
+  font-size: 0.72em;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.kanji-play-option .ox-key-hint {
+  margin-left: auto;
+}
+
 .kanji-learn-layout {
   display: flex;
   align-items: flex-start;
@@ -5555,11 +6018,100 @@ body.ui-accent-gradient.ui-accent-scope-screen .kanji-search {
   min-width: 0;
 }
 
+.kanji-learn-main {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Mirrors the sidebar's width on the right so the lesson sits in the middle of the screen. */
 @media (min-width: 1200px) {
-  .kanji-learn-sidebar:not(.hidden):not(.is-collapsed) + .kanji-learn-body {
+  .kanji-learn-sidebar:not(.hidden):not(.is-collapsed) + .kanji-learn-body,
+  .kanji-learn-sidebar:not(.hidden):not(.is-collapsed) + .kanji-learn-main {
     padding-right: calc(190px + 2rem);
   }
+}
+
+.learn-notes-panel {
+  box-sizing: border-box;
+  width: min(calc(640px + 2rem), 100%);
+  margin: 0.85rem auto 0;
+  padding: 0.45rem 0.7rem 0.55rem;
+  background: var(--card-bg);
+  border-radius: 10px;
+}
+
+.learn-notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.learn-notes-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.learn-notes-body {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.28s ease, opacity 0.2s ease, margin-top 0.28s ease;
+}
+
+.learn-notes-panel.is-open .learn-notes-body {
+  max-height: 22rem;
+  opacity: 1;
+  margin-top: 0.45rem;
+}
+
+.learn-notes-panel .afic-note-list {
+  max-height: 11rem;
+  overflow-y: auto;
+}
+
+.learn-edit-box {
+  box-sizing: border-box;
+  width: min(calc(640px + 2rem), 100%);
+  margin: 0.85rem auto 0;
+  padding: 1rem;
+  background: var(--card-bg);
+  border-radius: 10px;
+  border: 1px solid var(--accent-color, #3da9fc);
+}
+
+.learn-edit-grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.learn-edit-grid label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.learn-edit-grid textarea,
+.afic-inline-input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--accent-color, #3da9fc);
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.learn-edit-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.learn-notes-empty {
+  margin: 0;
+  opacity: 0.75;
+  font-size: 0.9rem;
 }
 
 .kanji-learn-lesson-head {
@@ -5866,6 +6418,22 @@ body.ui-accent-gradient.ui-accent-scope-screen .kanji-search {
   cursor: pointer;
 }
 
+.learn-play-star {
+  margin-left: auto;
+  padding: 0 0.15rem;
+  border: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--text-color) 55%, transparent);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.learn-play-star.is-on,
+.learn-play-star:hover {
+  color: #eab308;
+}
+
 .kanji-star:hover,
 .kanji-star[aria-pressed="true"] {
   color: #c9a227;
@@ -5941,6 +6509,100 @@ body.kanji-peeking {
   font-size: 1.8rem;
 }
 
+#kanji-detail-edit.is-active,
+.afic-edit-line {
+  border-color: var(--accent-color, #3da9fc);
+  background: color-mix(in srgb, var(--accent-color, #3da9fc) 16%, transparent);
+}
+
+.afic-edit-line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+}
+
+.afic-word-grid {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.6rem 0;
+}
+
+.afic-word-grid label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.afic-word-grid input,
+.afic-note-input {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--accent-color, #3da9fc);
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.afic-notes {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  text-align: left;
+}
+
+.afic-notes h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.afic-note-author {
+  font-weight: 650;
+}
+
+.afic-note-text {
+  white-space: pre-wrap;
+}
+
+.kanji-add-card {
+  display: grid;
+  gap: 0.55rem;
+  width: min(640px, 92vw);
+}
+
+.kanji-add-card label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.kanji-add-card input,
+.kanji-add-card textarea {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--accent-color, #3da9fc);
+  border-radius: 0.4rem;
+  padding: 0.35rem 0.5rem;
+}
+
+.kanji-add-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  max-height: 11rem;
+  overflow: auto;
+}
+
+.kanji-add-part.is-selected {
+  background: color-mix(in srgb, var(--accent-color, #3da9fc) 24%, transparent);
+}
+
 .kanji-detail-nav {
   display: flex;
   align-items: center;
@@ -5951,21 +6613,30 @@ body.kanji-peeking {
 .kanji-detail-arrow {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  width: 4.6rem;
-  height: 2.6rem;
-  padding: 0 0.4rem;
+  justify-content: flex-start;
+  gap: 0.3rem;
+  width: 8.75rem;
+  min-width: 8.75rem;
+  max-width: 8.75rem;
+  height: 2.4rem;
+  padding: 0 0.55rem;
   line-height: 1;
+  overflow: hidden;
+  flex: none;
 }
 
 .kanji-detail-arrow-sign {
-  font-size: 1.3rem;
+  flex: none;
+  font-size: 1.15rem;
 }
 
 .kanji-detail-arrow-glyph {
-  min-width: 1.6rem;
-  font-size: 1.6rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kanji-detail-arrow:disabled {
@@ -7108,6 +7779,11 @@ body.ui-accent-gradient #draw-canvas
   min-width: 12rem;
   max-width: none;
   flex: 1 1 12rem;
+  padding: 0.5rem;
+  border: 1px solid var(--accent-color);
+  border-radius: 6px;
+  background: var(--bg-color);
+  color: var(--text-color);
 }
 
 .draw-symbol-grid .symbol-box.selected {

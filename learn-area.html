@@ -4,9 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kanji Builder</title>
-  <link rel="stylesheet" href="style.css?v=0.7" />
-  <script src="translations.js?v=0.7"></script>
-  <script defer src="script.js?v=0.7"></script>
+  <link rel="stylesheet" href="style.css?v=0.21" />
+  <script src="translations.js?v=0.9"></script>
+  <script src="NewLearn/data/ready.js?v=0.10"></script>
+  <script defer src="script.js?v=0.23"></script>
 </head>
 <body data-page="learn-area">
   <header class="navbar">
@@ -44,12 +45,48 @@
   </header>
 
   <main>
-    <span class="app-version">v0.7a</span>
+    <span class="app-version">v0.7b</span>
     <div class="learn-area-bar">
       <a href="learn.html" class="transfer-lang-chip" data-i18n="learn.backToLearn">← Back to Learn</a>
     </div>
     <h1 id="learn-area-title">Learn</h1>
-    <div class="coming-soon" data-i18n="common.comingSoon">Coming Soon!</div>
+    <section class="kanji-controls">
+      <div class="kanji-row">
+        <button type="button" id="learn-browse-starred" class="transfer-lang-chip kanji-chip" aria-pressed="false" data-i18n="kanji.starredList">Starred List</button>
+        <a id="learn-browse-learn" class="transfer-lang-chip kanji-chip" data-i18n="kanji.learn">Learn</a>
+        <div class="kanji-sort-wrap">
+          <button type="button" id="learn-browse-sort" class="transfer-lang-chip kanji-chip kanji-sort-btn" aria-haspopup="menu" aria-expanded="false"></button>
+          <div id="learn-browse-sort-menu" class="kanji-sort-menu learn-browse-sort-menu hidden" role="menu"></div>
+        </div>
+        <input type="search" id="learn-browse-search" class="kanji-search" autocomplete="off" spellcheck="false" data-i18n-placeholder="learn.browseSearch" placeholder="Search" />
+      </div>
+    </section>
+    <p id="learn-browse-status" class="learn-browse-status"></p>
+    <section id="learn-browse-grid" class="kanji-grid learn-browse-grid"></section>
+
+    <div id="kanji-detail-modal" class="kanji-detail-modal hidden">
+      <div class="kanji-detail" role="dialog" aria-modal="true" aria-labelledby="kanji-detail-glyph">
+        <div class="kanji-detail-toolbar">
+          <button type="button" id="kanji-detail-back" class="transfer-lang-chip" data-i18n="kanji.back">← Back</button>
+          <button type="button" id="kanji-detail-close" class="transfer-lang-chip" data-i18n="kanji.close">Close</button>
+          <button type="button" id="kanji-detail-edit" class="transfer-lang-chip hidden">Edit</button>
+          <div class="kanji-detail-nav">
+            <button type="button" id="kanji-detail-prev" class="transfer-lang-chip kanji-detail-arrow" title="Previous" aria-label="Previous">
+              <span class="kanji-detail-arrow-sign">‹</span>
+              <span id="kanji-detail-prev-glyph" class="kanji-detail-arrow-glyph"></span>
+            </button>
+            <span id="kanji-detail-position" class="kanji-detail-position"></span>
+            <button type="button" id="kanji-detail-next" class="transfer-lang-chip kanji-detail-arrow" title="Next" aria-label="Next">
+              <span id="kanji-detail-next-glyph" class="kanji-detail-arrow-glyph"></span>
+              <span class="kanji-detail-arrow-sign">›</span>
+            </button>
+          </div>
+          <button type="button" id="kanji-detail-star" class="kanji-star kanji-detail-star">☆</button>
+        </div>
+        <div id="kanji-detail-body"></div>
+      </div>
+    </div>
+    <div id="kanji-peek" class="kanji-peek hidden" aria-hidden="true"></div>
   </main>
 </body>
 </html>

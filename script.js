@@ -53,6 +53,7 @@ function isAdminMode() {
 function setAdminMode(enabled) {
   localStorage.setItem(ADMIN_MODE_KEY, enabled ? "1" : "0");
   syncAdminModeVersionLabel();
+  document.dispatchEvent(new Event("adminmodechange"));
 }
 
 function requireAdminPassword(promptPath) {
@@ -105,26 +106,415 @@ window.requireAdminPassword = requireAdminPassword;
 window.setAdminMode = setAdminMode;
 
 const USERNAME_UI_TEXTS = {
-  en: { empty: "[Click Here To Create A Username]", title: "Username", label: "Name:", anonymous: "Be Anonymous", save: "Save", close: "Close" },
-  zh: { empty: "[点击这里创建用户名]", title: "用户名", label: "名称：", anonymous: "保持匿名", save: "保存", close: "关闭" },
-  es: { empty: "[Haz clic aquí para crear un nombre]", title: "Nombre de usuario", label: "Nombre:", anonymous: "Ser anónimo", save: "Guardar", close: "Cerrar" },
-  fr: { empty: "[Cliquez ici pour créer un nom]", title: "Nom d’utilisateur", label: "Nom :", anonymous: "Rester anonyme", save: "Enregistrer", close: "Fermer" },
-  ru: { empty: "[Нажмите здесь, чтобы создать имя]", title: "Имя пользователя", label: "Имя:", anonymous: "Остаться анонимным", save: "Сохранить", close: "Закрыть" },
-  de: { empty: "[Hier klicken, um einen Namen zu erstellen]", title: "Benutzername", label: "Name:", anonymous: "Anonym bleiben", save: "Speichern", close: "Schließen" },
-  ja: { empty: "[ここをクリックしてユーザー名を作成]", title: "ユーザー名", label: "名前：", anonymous: "匿名にする", save: "保存", close: "閉じる" },
-  it: { empty: "[Clicca qui per creare un nome utente]", title: "Nome utente", label: "Nome:", anonymous: "Resta anonimo", save: "Salva", close: "Chiudi" },
-  pt: { empty: "[Clique aqui para criar um nome de usuário]", title: "Nome de usuário", label: "Nome:", anonymous: "Ficar anônimo", save: "Salvar", close: "Fechar" },
-  ko: { empty: "[여기를 클릭해 사용자 이름을 만드세요]", title: "사용자 이름", label: "이름:", anonymous: "익명으로 유지", save: "저장", close: "닫기" },
+  en: {
+    empty: "[Click Here To Create A Username]", title: "Username", label: "Name:", anonymous: "Be Anonymous", anonymousName: "Anonymous", save: "Save", close: "Close",
+    aficTitle: "Get an AFIC? (Approved Fluency Identification Code)",
+    aficNote: "Passing a test will allow you to make edits to language files.",
+    aficRules: "You will have 60 seconds to complete 10 random Vocabulary and 10 random sentences with the OX Gamemode.",
+    aficOx: "If the translation is correct, you will select \"O\". If the translation is wrong, you will select \"X\" and then select the correct answer.",
+    aficStart: "Click anywhere to start the test",
+    aficLoading: "Loading…", aficLoadFail: "This test could not be loaded.",
+    aficIsCorrect: "Is this the correct translation?", aficPick: "Select the correct answer",
+    aficWrongCount: "Wrong: {n} / 2", aficCorrect: "Correct!", aficWrong: "Wrong.",
+    aficPass: "Passed.", aficFailWrong: "Three wrong answers fails the test.", aficFailTime: "Time is up.",
+    aficClose: "Click anywhere to close", vocab: "Vocabulary", sentence: "Sentence",
+    aficRadical: "Radical", aficRadicalRules: "You will have 60 seconds to complete 20 random Radicals with the OX Gamemode.",
+    aficIsMeaning: "Is this the correct meaning?", aficRemove: "Remove AFIC", aficRemoveConfirm: "Remove every passed test?",
+  },
+  zh: {
+    empty: "[点击这里创建用户名]", title: "用户名", label: "名称：", anonymous: "保持匿名", anonymousName: "匿名", save: "保存", close: "关闭",
+    aficTitle: "获取 AFIC？（认可流利度识别码）",
+    aficNote: "通过测试后，你将可以编辑语言文件。",
+    aficRules: "你有 60 秒完成 10 个随机词汇和 10 个随机句子，使用 OX 模式。",
+    aficOx: "如果翻译正确，选择“O”。如果翻译错误，选择“X”，然后选择正确答案。",
+    aficStart: "点击任意位置开始测试",
+    aficLoading: "加载中…", aficLoadFail: "无法加载此测试。",
+    aficIsCorrect: "这个翻译正确吗？", aficPick: "选择正确答案",
+    aficWrongCount: "错误：{n} / 2", aficCorrect: "正确！", aficWrong: "错误。",
+    aficPass: "通过。", aficFailWrong: "答错 3 次，测试失败。", aficFailTime: "时间到。",
+    aficClose: "点击任意位置关闭", vocab: "词汇", sentence: "句子",
+    aficRadical: "部首", aficRadicalRules: "你有 60 秒完成 20 个随机部首，使用 OX 模式。",
+    aficIsMeaning: "这个意思正确吗？", aficRemove: "移除 AFIC", aficRemoveConfirm: "移除所有已通过的测试？",
+  },
+  es: {
+    empty: "[Haz clic aquí para crear un nombre]", title: "Nombre de usuario", label: "Nombre:", anonymous: "Ser anónimo", anonymousName: "Anónimo", save: "Guardar", close: "Cerrar",
+    aficTitle: "¿Obtener un AFIC? (Código de identificación de fluidez aprobado)",
+    aficNote: "Aprobar un examen te permitirá editar los archivos de idioma.",
+    aficRules: "Tendrás 60 segundos para completar 10 vocabularios y 10 oraciones al azar en el modo OX.",
+    aficOx: "Si la traducción es correcta, selecciona \"O\". Si es incorrecta, selecciona \"X\" y luego la respuesta correcta.",
+    aficStart: "Haz clic en cualquier lugar para empezar el examen",
+    aficLoading: "Cargando…", aficLoadFail: "No se pudo cargar este examen.",
+    aficIsCorrect: "¿Es correcta esta traducción?", aficPick: "Selecciona la respuesta correcta",
+    aficWrongCount: "Errores: {n} / 2", aficCorrect: "¡Correcto!", aficWrong: "Incorrecto.",
+    aficPass: "Aprobado.", aficFailWrong: "Tres respuestas incorrectas suspenden el examen.", aficFailTime: "Se acabó el tiempo.",
+    aficClose: "Haz clic en cualquier lugar para cerrar", vocab: "Vocabulario", sentence: "Oración",
+    aficRadical: "Radical", aficRadicalRules: "Tendrás 60 segundos para completar 20 radicales al azar en el modo OX.",
+    aficIsMeaning: "¿Es correcto este significado?", aficRemove: "Quitar AFIC", aficRemoveConfirm: "¿Quitar todos los exámenes aprobados?",
+  },
+  fr: {
+    empty: "[Cliquez ici pour créer un nom]", title: "Nom d’utilisateur", label: "Nom :", anonymous: "Rester anonyme", anonymousName: "Anonyme", save: "Enregistrer", close: "Fermer",
+    aficTitle: "Obtenir un AFIC ? (Code d’identification de maîtrise approuvé)",
+    aficNote: "Réussir un test vous permettra de modifier les fichiers de langue.",
+    aficRules: "Vous aurez 60 secondes pour terminer 10 vocabulaires et 10 phrases au hasard en mode OX.",
+    aficOx: "Si la traduction est correcte, sélectionnez « O ». Si elle est fausse, sélectionnez « X », puis la bonne réponse.",
+    aficStart: "Cliquez n’importe où pour commencer le test",
+    aficLoading: "Chargement…", aficLoadFail: "Ce test n’a pas pu être chargé.",
+    aficIsCorrect: "Cette traduction est-elle correcte ?", aficPick: "Sélectionnez la bonne réponse",
+    aficWrongCount: "Erreurs : {n} / 2", aficCorrect: "Correct !", aficWrong: "Incorrect.",
+    aficPass: "Réussi.", aficFailWrong: "Trois mauvaises réponses font échouer le test.", aficFailTime: "Le temps est écoulé.",
+    aficClose: "Cliquez n’importe où pour fermer", vocab: "Vocabulaire", sentence: "Phrase",
+    aficRadical: "Radical", aficRadicalRules: "Vous aurez 60 secondes pour terminer 20 radicaux au hasard en mode OX.",
+    aficIsMeaning: "Ce sens est-il correct ?", aficRemove: "Retirer l’AFIC", aficRemoveConfirm: "Retirer tous les tests réussis ?",
+  },
+  ru: {
+    empty: "[Нажмите здесь, чтобы создать имя]", title: "Имя пользователя", label: "Имя:", anonymous: "Остаться анонимным", anonymousName: "Аноним", save: "Сохранить", close: "Закрыть",
+    aficTitle: "Получить AFIC? (Подтверждённый код владения языком)",
+    aficNote: "Сдача теста позволит редактировать языковые файлы.",
+    aficRules: "У вас будет 60 секунд, чтобы пройти 10 случайных слов и 10 случайных предложений в режиме OX.",
+    aficOx: "Если перевод верный, выберите «O». Если перевод неверный, выберите «X», затем правильный ответ.",
+    aficStart: "Нажмите в любом месте, чтобы начать тест",
+    aficLoading: "Загрузка…", aficLoadFail: "Не удалось загрузить этот тест.",
+    aficIsCorrect: "Этот перевод верный?", aficPick: "Выберите правильный ответ",
+    aficWrongCount: "Ошибки: {n} / 2", aficCorrect: "Верно!", aficWrong: "Неверно.",
+    aficPass: "Сдано.", aficFailWrong: "Три ошибки означают провал теста.", aficFailTime: "Время вышло.",
+    aficClose: "Нажмите в любом месте, чтобы закрыть", vocab: "Слова", sentence: "Предложение",
+    aficRadical: "Радикал", aficRadicalRules: "У вас будет 60 секунд, чтобы пройти 20 случайных радикалов в режиме OX.",
+    aficIsMeaning: "Это значение верное?", aficRemove: "Удалить AFIC", aficRemoveConfirm: "Удалить все сданные тесты?",
+  },
+  de: {
+    empty: "[Hier klicken, um einen Namen zu erstellen]", title: "Benutzername", label: "Name:", anonymous: "Anonym bleiben", anonymousName: "Anonym", save: "Speichern", close: "Schließen",
+    aficTitle: "Einen AFIC holen? (Anerkannter Sprachbeherrschungs-Code)",
+    aficNote: "Wer einen Test besteht, darf Sprachdateien bearbeiten.",
+    aficRules: "Du hast 60 Sekunden für 10 zufällige Vokabeln und 10 zufällige Sätze im OX-Modus.",
+    aficOx: "Ist die Übersetzung richtig, wähle „O“. Ist sie falsch, wähle „X“ und dann die richtige Antwort.",
+    aficStart: "Klicke irgendwo, um den Test zu starten",
+    aficLoading: "Laden…", aficLoadFail: "Dieser Test konnte nicht geladen werden.",
+    aficIsCorrect: "Ist diese Übersetzung richtig?", aficPick: "Wähle die richtige Antwort",
+    aficWrongCount: "Falsch: {n} / 2", aficCorrect: "Richtig!", aficWrong: "Falsch.",
+    aficPass: "Bestanden.", aficFailWrong: "Drei falsche Antworten bedeuten, dass der Test nicht bestanden ist.", aficFailTime: "Die Zeit ist um.",
+    aficClose: "Klicke irgendwo, um zu schließen", vocab: "Vokabeln", sentence: "Satz",
+    aficRadical: "Radikal", aficRadicalRules: "Du hast 60 Sekunden für 20 zufällige Radikale im OX-Modus.",
+    aficIsMeaning: "Ist diese Bedeutung richtig?", aficRemove: "AFIC entfernen", aficRemoveConfirm: "Alle bestandenen Tests entfernen?",
+  },
+  ja: {
+    empty: "[ここをクリックしてユーザー名を作成]", title: "ユーザー名", label: "名前：", anonymous: "匿名にする", anonymousName: "匿名", save: "保存", close: "閉じる",
+    aficTitle: "AFICを取得しますか？（認定流暢度識別コード）",
+    aficNote: "テストに合格すると、言語ファイルを編集できます。",
+    aficRules: "60秒で、OXモードのランダムな単語10問と文10問に答えます。",
+    aficOx: "訳が正しければ「O」を選びます。誤っていれば「X」を選び、そのあと正しい答えを選びます。",
+    aficStart: "どこかをクリックしてテストを開始",
+    aficLoading: "読み込み中…", aficLoadFail: "このテストを読み込めませんでした。",
+    aficIsCorrect: "この訳は正しいですか？", aficPick: "正しい答えを選んでください",
+    aficWrongCount: "不正解：{n} / 2", aficCorrect: "正解！", aficWrong: "不正解。",
+    aficPass: "合格。", aficFailWrong: "3問間違えると不合格です。", aficFailTime: "時間切れです。",
+    aficClose: "どこかをクリックして閉じる", vocab: "単語", sentence: "文",
+    aficRadical: "部首", aficRadicalRules: "60秒で、OXモードのランダムな部首20問に答えます。",
+    aficIsMeaning: "この意味は正しいですか？", aficRemove: "AFICを削除", aficRemoveConfirm: "合格したテストをすべて削除しますか？",
+  },
+  it: {
+    empty: "[Clicca qui per creare un nome utente]", title: "Nome utente", label: "Nome:", anonymous: "Resta anonimo", anonymousName: "Anonimo", save: "Salva", close: "Chiudi",
+    aficTitle: "Ottenere un AFIC? (Codice di identificazione della fluenza approvato)",
+    aficNote: "Superare un test ti permetterà di modificare i file delle lingue.",
+    aficRules: "Avrai 60 secondi per completare 10 vocaboli e 10 frasi casuali in modalità OX.",
+    aficOx: "Se la traduzione è corretta, seleziona \"O\". Se è sbagliata, seleziona \"X\" e poi la risposta corretta.",
+    aficStart: "Fai clic in un punto qualsiasi per iniziare il test",
+    aficLoading: "Caricamento…", aficLoadFail: "Impossibile caricare questo test.",
+    aficIsCorrect: "Questa traduzione è corretta?", aficPick: "Seleziona la risposta corretta",
+    aficWrongCount: "Errori: {n} / 2", aficCorrect: "Corretto!", aficWrong: "Sbagliato.",
+    aficPass: "Superato.", aficFailWrong: "Tre risposte sbagliate fanno fallire il test.", aficFailTime: "Tempo scaduto.",
+    aficClose: "Fai clic in un punto qualsiasi per chiudere", vocab: "Vocabolario", sentence: "Frase",
+    aficRadical: "Radicale", aficRadicalRules: "Avrai 60 secondi per completare 20 radicali casuali in modalità OX.",
+    aficIsMeaning: "Questo significato è corretto?", aficRemove: "Rimuovi AFIC", aficRemoveConfirm: "Rimuovere tutti i test superati?",
+  },
+  pt: {
+    empty: "[Clique aqui para criar um nome de usuário]", title: "Nome de usuário", label: "Nome:", anonymous: "Ficar anônimo", anonymousName: "Anônimo", save: "Salvar", close: "Fechar",
+    aficTitle: "Obter um AFIC? (Código de identificação de fluência aprovado)",
+    aficNote: "Passar em um teste permitirá editar os arquivos de idioma.",
+    aficRules: "Você terá 60 segundos para completar 10 vocabulários e 10 frases aleatórias no modo OX.",
+    aficOx: "Se a tradução estiver correta, selecione \"O\". Se estiver errada, selecione \"X\" e depois a resposta correta.",
+    aficStart: "Clique em qualquer lugar para começar o teste",
+    aficLoading: "Carregando…", aficLoadFail: "Não foi possível carregar este teste.",
+    aficIsCorrect: "Esta tradução está correta?", aficPick: "Selecione a resposta correta",
+    aficWrongCount: "Erros: {n} / 2", aficCorrect: "Correto!", aficWrong: "Errado.",
+    aficPass: "Aprovado.", aficFailWrong: "Três respostas erradas reprovam o teste.", aficFailTime: "O tempo acabou.",
+    aficClose: "Clique em qualquer lugar para fechar", vocab: "Vocabulário", sentence: "Frase",
+    aficRadical: "Radical", aficRadicalRules: "Você terá 60 segundos para completar 20 radicais aleatórios no modo OX.",
+    aficIsMeaning: "Este significado está correto?", aficRemove: "Remover AFIC", aficRemoveConfirm: "Remover todos os testes aprovados?",
+  },
+  ko: {
+    empty: "[여기를 클릭해 사용자 이름을 만드세요]", title: "사용자 이름", label: "이름:", anonymous: "익명으로 유지", anonymousName: "익명", save: "저장", close: "닫기",
+    aficTitle: "AFIC를 받을까요? (승인된 유창성 식별 코드)",
+    aficNote: "시험에 합격하면 언어 파일을 편집할 수 있습니다.",
+    aficRules: "60초 동안 OX 모드로 무작위 단어 10개와 문장 10개를 풀게 됩니다.",
+    aficOx: "번역이 맞으면 \"O\"를 고르세요. 틀리면 \"X\"를 고른 다음 올바른 답을 고르세요.",
+    aficStart: "아무 곳이나 클릭하면 시험이 시작됩니다",
+    aficLoading: "불러오는 중…", aficLoadFail: "이 시험을 불러오지 못했습니다.",
+    aficIsCorrect: "이 번역이 맞습니까?", aficPick: "올바른 답을 고르세요",
+    aficWrongCount: "오답: {n} / 2", aficCorrect: "정답!", aficWrong: "오답.",
+    aficPass: "합격.", aficFailWrong: "세 번 틀리면 시험에 떨어집니다.", aficFailTime: "시간이 끝났습니다.",
+    aficClose: "아무 곳이나 클릭하면 닫힙니다", vocab: "단어", sentence: "문장",
+    aficRadical: "부수", aficRadicalRules: "60초 동안 OX 모드로 무작위 부수 20개를 풀게 됩니다.",
+    aficIsMeaning: "이 뜻이 맞습니까?", aficRemove: "AFIC 제거", aficRemoveConfirm: "통과한 시험을 모두 제거할까요?",
+  },
 };
+
+// Letters follow the language-file order: Chinese, English, French, German, Italian, Japanese, Korean,
+// Portuguese, Russian, Spanish. A passed radical test adds X after those letters. The badge is the current
+// UI language plus every test that was passed.
+const AFIC_STORAGE_KEY = "kanjiBuilderAfic";
+const AFIC_RADICAL = "radical";
+const AFIC_LETTERS = { zh: "C", en: "E", fr: "F", de: "G", it: "I", ja: "J", ko: "K", pt: "P", ru: "R", es: "S" };
+const AFIC_SORT = ["zh", "en", "fr", "de", "it", "ja", "ko", "pt", "ru", "es"];
+const AFIC_SECONDS = 60;
+const AFIC_EACH = 10;
+const AFIC_RADICAL_COUNT = 20;
+const AFIC_MAX_WRONG = 2;
+const AFIC_CHOICES = 5;
+
+function readAficPassed() {
+  try {
+    const value = JSON.parse(localStorage.getItem(AFIC_STORAGE_KEY));
+    const passed = Array.isArray(value && value.passed) ? value.passed : [];
+    return passed.filter((code) => AFIC_LETTERS[code] || code === AFIC_RADICAL);
+  } catch (e) {
+    return [];
+  }
+}
+
+function aficPassedList(codes) {
+  const list = AFIC_SORT.filter((code) => codes.has(code));
+  if (codes.has(AFIC_RADICAL)) list.push(AFIC_RADICAL);
+  return list;
+}
+
+function aficCode() {
+  const passed = readAficPassed();
+  if (!passed.length) return "";
+  const codes = new Set(passed);
+  codes.add(getStoredLang());
+  let letters = AFIC_SORT.filter((code) => codes.has(code)).map((code) => AFIC_LETTERS[code]).join("");
+  if (codes.has(AFIC_RADICAL)) letters += "X";
+  return letters;
+}
+
+window.getAficPassed = readAficPassed;
 
 function getStoredUsername() {
   return (localStorage.getItem(USERNAME_STORAGE_KEY) || "").trim();
 }
 
 function getCurrentAuthorName() {
-  return getStoredUsername() || ANONYMOUS_NAME;
+  const stored = getStoredUsername();
+  const pack = (USERNAME_UI_TEXTS[getStoredLang()] || USERNAME_UI_TEXTS.en || {});
+  const name = stored || pack.anonymousName || ANONYMOUS_NAME;
+  const code = aficCode();
+  return code ? name + " (" + code + ")" : name;
 }
 window.getCurrentAuthorName = getCurrentAuthorName;
+
+const AFIC_EDITS_KEY = "kanjiBuilderAficEdits";
+
+function emptyAficEdits() {
+  return { log: [], dictionary: {}, kanji: {}, learn: {}, learnWords: {}, notes: {}, kanjiAdded: [] };
+}
+
+function readAficEdits() {
+  try {
+    const value = JSON.parse(localStorage.getItem(AFIC_EDITS_KEY) || "{}");
+    const base = emptyAficEdits();
+    if (!value || typeof value !== "object") return base;
+    base.log = Array.isArray(value.log) ? value.log : [];
+    ["dictionary", "kanji", "learn", "learnWords", "notes"].forEach((key) => {
+      if (value[key] && typeof value[key] === "object") base[key] = value[key];
+    });
+    if (Array.isArray(value.kanjiAdded)) base.kanjiAdded = value.kanjiAdded;
+    return base;
+  } catch (err) {
+    return emptyAficEdits();
+  }
+}
+
+function writeAficEdits(store) {
+  try {
+    localStorage.setItem(AFIC_EDITS_KEY, JSON.stringify(store));
+  } catch (err) {
+    console.warn("Could not store AFIC edits", err);
+  }
+}
+
+function aficHasLetters() {
+  if (isAdminMode()) return true;
+  const letters = new Set(aficCode().split(""));
+  if (!arguments.length) return false;
+  for (let i = 0; i < arguments.length; i++) {
+    if (!letters.has(arguments[i])) return false;
+  }
+  return true;
+}
+
+function aficCanEditPair(codeA, codeB) {
+  const a = AFIC_LETTERS[codeA];
+  const b = AFIC_LETTERS[codeB];
+  return !!(a && b && a !== b && aficHasLetters(a, b));
+}
+
+function aficClean(text) {
+  return String(text == null ? "" : text).replace(/[\t\r\n]+/g, " ").trim();
+}
+
+function aficLearnKey(kind, prompt, answer, word) {
+  return kind + "|" + prompt + "|" + answer + "|" + word;
+}
+
+function aficLearnOverride(kind, prompt, answer, word) {
+  const value = (readAficEdits().learn || {})[aficLearnKey(kind, prompt, answer, word)];
+  return value == null ? "" : String(value);
+}
+
+function aficLearnWordOverride(kind, prompt, answer, word) {
+  const value = (readAficEdits().learnWords || {})[aficLearnKey(kind, prompt, answer, word)];
+  return value == null ? "" : String(value);
+}
+
+function saveLearnSides(kind, prompt, answer, sourceWord, wordBefore, meaningBefore, wordAfter, meaningAfter) {
+  const key = aficLearnKey(kind, prompt, answer, sourceWord);
+  const store = readAficEdits();
+  if (!store.learnWords) store.learnWords = {};
+  let changed = false;
+  if (pushAficLog(store, "learn", key, "word", wordBefore, wordAfter)) {
+    store.learnWords[key] = aficClean(wordAfter);
+    changed = true;
+  }
+  if (pushAficLog(store, "learn", key, "translation", meaningBefore, meaningAfter)) {
+    store.learn[key] = aficClean(meaningAfter);
+    changed = true;
+  }
+  if (changed) writeAficEdits(store);
+  return changed;
+}
+
+function aficReplaceWithInput(host, value, onSave, multiline) {
+  const input = document.createElement(multiline ? "textarea" : "input");
+  if (!multiline) input.type = "text";
+  else input.rows = 3;
+  input.className = "afic-inline-input";
+  input.value = value || "";
+  host.textContent = "";
+  host.append(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    onSave(save ? input.value : null);
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (!multiline || !e.shiftKey)) {
+      e.preventDefault();
+      finish(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("click", (e) => e.stopPropagation());
+}
+
+function worldEditKey(line) {
+  const id = getWorldLineWordId(line);
+  if (id) return "world:" + id;
+  const parts = String(line || "").split("\t");
+  return "world:" + aficClean(parts[0]) + "|" + aficClean(parts[7]) + "|" + aficClean(parts[1]);
+}
+
+function crossEditKey(entry) {
+  return "cross:" + (entry && entry.pairId || "") + "|" + aficClean(entry && entry.word) + "|" + aficClean(entry && entry.translation);
+}
+
+function pushAficLog(store, area, target, field, before, after) {
+  const row = {
+    at: new Date().toISOString(),
+    author: getCurrentAuthorName(),
+    area,
+    target,
+    field,
+    before: aficClean(before),
+    after: aficClean(after),
+  };
+  if (!row.after || row.before === row.after) return false;
+  store.log.push(row);
+  return true;
+}
+
+function aficLogText(log) {
+  return (log || []).map((row) => [row.at, row.author, row.area, row.target, row.field, row.before, row.after].join("\t")).join("\r\n");
+}
+
+function parseAficLog(text) {
+  return String(text || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const parts = line.split("\t");
+    if (parts.length < 7) return null;
+    return {
+      at: parts[0],
+      author: parts[1],
+      area: parts[2],
+      target: parts[3],
+      field: parts[4],
+      before: parts[5],
+      after: parts.slice(6).join(" "),
+    };
+  }).filter(Boolean);
+}
+
+function applyAficRecord(store, row) {
+  if (!row || !row.area || !row.target) return;
+  if (row.area === "dictionary") {
+    if (!store.dictionary[row.target]) store.dictionary[row.target] = {};
+    store.dictionary[row.target][row.field] = row.after;
+  } else if (row.area === "kanji") {
+    if (!store.kanji[row.target]) store.kanji[row.target] = {};
+    store.kanji[row.target][row.field] = row.after;
+  } else if (row.area === "learn") {
+    if (row.field === "word") {
+      if (!store.learnWords) store.learnWords = {};
+      store.learnWords[row.target] = row.after;
+    } else {
+      store.learn[row.target] = row.after;
+    }
+  } else if (row.area === "kanji-add") {
+    let record = null;
+    try { record = JSON.parse(row.after); } catch (err) { return; }
+    if (!record || !record.char || (record.set !== "chinese" && record.set !== "japanese")) return;
+    if (!Array.isArray(store.kanjiAdded)) store.kanjiAdded = [];
+    if (store.kanjiAdded.some((item) => item && item.set === record.set && item.char === record.char)) return;
+    store.kanjiAdded.push(record);
+  } else if (row.area === "note") {
+    const list = Array.isArray(store.notes[row.target]) ? store.notes[row.target] : [];
+    if (!list.some((note) => note.at === row.at && note.author === row.author && note.text === row.after)) {
+      list.push({ at: row.at, author: row.author, text: row.after });
+    }
+    store.notes[row.target] = list;
+  }
+}
+
+function mergeAficLog(rows) {
+  if (!Array.isArray(rows) || !rows.length) return 0;
+  const store = readAficEdits();
+  const seen = new Set(store.log.map((row) => [row.at, row.author, row.area, row.target, row.field, row.after].join("\t")));
+  let added = 0;
+  rows.forEach((row) => {
+    const key = [row.at, row.author, row.area, row.target, row.field, row.after].join("\t");
+    if (seen.has(key)) return;
+    seen.add(key);
+    store.log.push(row);
+    applyAficRecord(store, row);
+    added++;
+  });
+  if (added) writeAficEdits(store);
+  return added;
+}
 
 function initializeEntryAuthorship(entry, dateValue) {
   if (!entry || entry.isCore) return entry;
@@ -796,35 +1186,525 @@ function setupUsernameBadge() {
   popup.className = "username-popup hidden";
   popup.innerHTML = `
     <div class="username-popup-content">
-      <h2 id="username-popup-title">Username</h2>
+      <div class="username-popup-head">
+        <h2 id="username-popup-title">Username</h2>
+        <div class="username-popup-actions">
+          <button id="username-save" type="button">Save</button>
+          <button id="username-close" type="button">Close</button>
+        </div>
+      </div>
       <label id="username-name-label" for="username-input">Name:</label>
       <input id="username-input" type="text" maxlength="60" />
       <label class="username-anonymous-option">
         <input id="username-anonymous" type="checkbox" />
         <span id="username-anonymous-label">Be Anonymous</span>
       </label>
-      <div class="username-popup-actions">
-        <button id="username-save" type="button">Save</button>
-        <button id="username-close" type="button">Close</button>
+      <div class="afic-block">
+        <h3 id="afic-title" class="afic-title"></h3>
+        <p id="afic-note" class="afic-note"></p>
+        <div id="afic-langs" class="afic-langs"></div>
       </div>
     </div>`;
   document.body.appendChild(popup);
   const input = popup.querySelector("#username-input");
   const anonymous = popup.querySelector("#username-anonymous");
 
-  function refreshText() {
-    const text = USERNAME_UI_TEXTS[getStoredLang()] || USERNAME_UI_TEXTS.en;
+  const overlay = document.createElement("div");
+  overlay.className = "afic-test hidden";
+  const card = document.createElement("div");
+  card.className = "afic-test-card";
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  let test = null;
+  let testGen = 0;
+
+  function uiText() {
+    return Object.assign({}, USERNAME_UI_TEXTS.en, USERNAME_UI_TEXTS[getStoredLang()] || {});
+  }
+
+  function fill(template, vars) {
+    let text = String(template);
+    Object.keys(vars || {}).forEach((key) => {
+      text = text.split("{" + key + "}").join(String(vars[key]));
+    });
+    return text;
+  }
+
+  function languageName(code) {
+    const button = document.querySelector('#lang-dropdown [data-lang="' + CSS.escape(code) + '"]');
+    return (button && button.textContent.trim()) || LANGUAGES[code] || code;
+  }
+
+  function badgeLabel(text) {
+    const code = aficCode();
     const username = getStoredUsername();
-    badge.textContent = username || text.empty;
+    if (!code) return username || text.empty;
+    return (username || text.anonymousName || "Anonymous") + " (" + code + ")";
+  }
+
+  function renderLangs() {
+    const box = popup.querySelector("#afic-langs");
+    const ui = getStoredLang();
+    const passed = new Set(readAficPassed());
+    box.textContent = "";
+    const buttons = document.querySelectorAll("#lang-dropdown [data-lang]");
+    const codes = buttons.length ? Array.from(buttons).map((btn) => btn.getAttribute("data-lang")) : Object.keys(LANGUAGES);
+    codes.forEach((code) => {
+      if (!code || code === ui || !AFIC_LETTERS[code]) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "afic-lang" + (passed.has(code) ? " is-passed" : "");
+      button.textContent = languageName(code) + (passed.has(code) ? " (" + AFIC_LETTERS[code] + ")" : "");
+      button.addEventListener("click", () => openAficTest(code));
+      box.appendChild(button);
+    });
+    const text = uiText();
+    const radical = document.createElement("button");
+    radical.type = "button";
+    radical.className = "afic-lang" + (passed.has(AFIC_RADICAL) ? " is-passed" : "");
+    radical.textContent = text.aficRadical + (passed.has(AFIC_RADICAL) ? " (X)" : "");
+    radical.addEventListener("click", () => openAficTest(AFIC_RADICAL));
+    box.appendChild(radical);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "afic-lang afic-remove";
+    remove.textContent = text.aficRemove;
+    remove.addEventListener("click", () => {
+      if (!readAficPassed().length) return;
+      if (!window.confirm(uiText().aficRemoveConfirm)) return;
+      localStorage.removeItem(AFIC_STORAGE_KEY);
+      refreshText();
+    });
+    box.appendChild(remove);
+  }
+
+  function refreshText() {
+    const text = uiText();
+    badge.textContent = badgeLabel(text);
     popup.querySelector("#username-popup-title").textContent = text.title;
     popup.querySelector("#username-name-label").textContent = text.label;
     popup.querySelector("#username-anonymous-label").textContent = text.anonymous;
     popup.querySelector("#username-save").textContent = text.save;
     popup.querySelector("#username-close").textContent = text.close;
+    popup.querySelector("#afic-title").textContent = text.aficTitle;
+    popup.querySelector("#afic-note").textContent = text.aficNote;
+    renderLangs();
+    if (test && test.view === "result" && test.passed) renderTest();
   }
 
   function closePopup() {
     popup.classList.add("hidden");
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function plain(text) {
+    return String(text || "").normalize("NFKC").toLocaleLowerCase().replace(/\p{P}/gu, "").replace(/\s+/g, " ").trim();
+  }
+
+  function splitMeanings(text) {
+    return String(text || "").split(/,(?![^()]*\))/).map((part) => part.trim()).filter(Boolean);
+  }
+
+  function shuffle(list) {
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
+  }
+
+  function rowItem(line, sentences) {
+    const text = String(line || "");
+    const tab1 = text.indexOf("\t");
+    const tab2 = tab1 < 0 ? -1 : text.indexOf("\t", tab1 + 1);
+    const wordRaw = (tab1 < 0 ? text : text.slice(0, tab1)).trim();
+    const meaningRaw = tab2 < 0 ? "" : text.slice(tab2 + 1);
+    const meanings = sentences ? (meaningRaw.trim() ? [meaningRaw.trim()] : []) : splitMeanings(meaningRaw);
+    const word = sentences ? wordRaw : (splitMeanings(wordRaw)[0] || "");
+    return { word, meanings, meaning: meanings[0] || "" };
+  }
+
+  function samplePool(lessons, count, sentences) {
+    const pool = [];
+    const seen = new Set();
+    if (!lessons || !lessons.length) return pool;
+    let guard = 0;
+    while (pool.length < count && guard < count * 50) {
+      guard += 1;
+      const lesson = lessons[Math.floor(Math.random() * lessons.length)];
+      const rows = lesson && lesson[1];
+      if (!rows || !rows.length) continue;
+      const item = rowItem(rows[Math.floor(Math.random() * rows.length)], sentences);
+      if (!item.word || !item.meaning) continue;
+      const key = plain(item.word) + "\0" + plain(item.meaning);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pool.push(item);
+    }
+    return pool;
+  }
+
+  function loadPool(kind, pair, sentences, gen) {
+    const file = kind === "vocabulary" ? "vocab" : "sentence";
+    const globalName = kind === "vocabulary" ? "LEARN_VOCAB" : "LEARN_SENTENCES";
+    const script = document.createElement("script");
+    return new Promise((resolve, reject) => {
+      script.onload = () => {
+        const data = (window[globalName] && window[globalName][pair]) || [];
+        const pool = gen === testGen ? samplePool(data, 48, sentences) : [];
+        if (window[globalName]) delete window[globalName][pair];
+        script.remove();
+        resolve(pool);
+      };
+      script.onerror = () => {
+        script.remove();
+        reject(new Error("load"));
+      };
+      script.src = "NewLearn/data/" + file + "-" + pair + ".js?v=0.9";
+      document.body.appendChild(script);
+    });
+  }
+
+  function buildQuestions(vocab, sentences) {
+    if (vocab.length < AFIC_EACH + 1 || sentences.length < AFIC_EACH + 1) return null;
+    const make = (pool, kind) => pool.slice(0, AFIC_EACH).map((item) => {
+      let correctShown = Math.random() < 0.5;
+      let shown = item.meaning;
+      if (!correctShown) {
+        const others = pool.filter((candidate) => !item.meanings.some((meaning) => plain(meaning) === plain(candidate.meaning)));
+        if (!others.length) correctShown = true;
+        else shown = others[Math.floor(Math.random() * others.length)].meaning;
+      }
+      return { kind, word: item.word, meaning: item.meaning, meanings: item.meanings, shown, correctShown, pool };
+    });
+    return shuffle(make(vocab, "vocabulary").concat(make(sentences, "sentence")));
+  }
+
+  function optionsFor(question) {
+    const taken = new Set(question.meanings.map(plain));
+    const picks = [question.meaning];
+    shuffle(question.pool.slice()).forEach((item) => {
+      if (picks.length >= AFIC_CHOICES) return;
+      const key = plain(item.meaning);
+      if (!key || taken.has(key)) return;
+      taken.add(key);
+      picks.push(item.meaning);
+    });
+    return shuffle(picks);
+  }
+
+  function stopTimer() {
+    if (test && test.timer) {
+      clearInterval(test.timer);
+      test.timer = 0;
+    }
+  }
+
+  function closeTest() {
+    testGen += 1;
+    stopTimer();
+    test = null;
+    overlay.classList.add("hidden");
+    card.textContent = "";
+  }
+
+  function secondsLeft() {
+    if (!test || !test.endsAt) return AFIC_SECONDS;
+    return Math.max(0, Math.ceil((test.endsAt - Date.now()) / 1000));
+  }
+
+  function renderTest() {
+    if (!test) return;
+    const text = uiText();
+    card.textContent = "";
+    card.dataset.view = test.view;
+    const head = el("div", "afic-test-head");
+    head.append(el("h2", "", test.code === AFIC_RADICAL ? text.aficRadical : languageName(test.code)));
+    const close = el("button", "afic-test-close", text.close);
+    close.type = "button";
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeTest();
+    });
+    head.append(close);
+    card.append(head);
+
+    if (test.view === "intro") {
+      card.append(el("p", "afic-copy", test.code === AFIC_RADICAL ? text.aficRadicalRules : text.aficRules), el("p", "afic-copy", text.aficOx));
+      card.append(el("p", "afic-start", text.aficStart));
+      if (test.failedLoad) card.append(el("p", "afic-start is-wrong", text.aficLoadFail));
+      else if (!test.ready) card.append(el("p", "afic-loading", text.aficLoading));
+      return;
+    }
+
+    if (test.view === "result") {
+      const message = test.passed ? text.aficPass : (test.reason === "time" ? text.aficFailTime : text.aficFailWrong);
+      card.append(el("p", "afic-result " + (test.passed ? "is-correct" : "is-wrong"), message));
+      if (test.passed) card.append(el("p", "afic-result-code", badge.textContent));
+      card.append(el("p", "afic-start", text.aficClose));
+      return;
+    }
+
+    const question = test.questions[test.index];
+    const meta = el("div", "afic-test-meta");
+    const kindLabel = question.kind === "sentence" ? text.sentence : question.kind === "radical" ? text.aficRadical : text.vocab;
+    meta.append(
+      el("span", "", kindLabel),
+      el("span", "", (test.index + 1) + " / " + test.questions.length),
+      el("span", "", fill(text.aficWrongCount, { n: test.wrongs })),
+      el("span", "afic-timer", String(secondsLeft()))
+    );
+    const prompt = el("div", "afic-prompt" + (question.kind === "sentence" ? " is-sentence" : "") + (question.kind === "radical" ? " is-radical" : ""), question.word);
+    prompt.lang = question.kind === "radical" ? "zh" : test.code;
+    const box = el("div", "kanji-play-box");
+    const meaning = el("span", "kanji-play-def", question.shown);
+    meaning.lang = question.kind === "radical" ? "en" : test.ui;
+    box.append(meaning);
+    if (test.view === "feedback" && test.round.phase !== 2) box.classList.add(question.correctShown ? "is-correct" : "is-wrong");
+    const judges = el("div", "kanji-play-actions");
+    ["o", "x"].forEach((choice) => {
+      const button = el("button", "transfer-lang-chip kanji-play-judge", choice);
+      button.type = "button";
+      button.disabled = test.view !== "question" || test.round.phase !== 1;
+      if (test.round.choice === choice) button.classList.add("is-active");
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        judge(choice);
+      });
+      judges.append(button);
+    });
+    card.append(meta, prompt, el("div", "kanji-play-label", question.kind === "radical" ? text.aficIsMeaning : text.aficIsCorrect), box, judges);
+    if (test.round.phase === 2) {
+      const list = el("div", "kanji-play-options");
+      test.round.options.forEach((label) => {
+        const option = el("button", "kanji-play-option", label);
+        option.type = "button";
+        option.lang = question.kind === "radical" ? "en" : test.ui;
+        option.disabled = test.view !== "question";
+        if (test.view === "feedback" && plain(label) === plain(question.meaning)) option.classList.add("is-correct");
+        else if (test.view === "feedback" && test.round.picked && plain(label) === plain(test.round.picked)) option.classList.add("is-wrong");
+        option.addEventListener("click", (event) => {
+          event.stopPropagation();
+          pick(label);
+        });
+        list.append(option);
+      });
+      card.append(el("div", "kanji-play-label", text.aficPick), list);
+    }
+    if (test.view === "feedback") {
+      card.append(el("div", "kanji-play-status " + (test.round.ok ? "is-correct" : "is-wrong"), test.round.ok ? text.aficCorrect : text.aficWrong));
+      card.append(el("p", "afic-start", getTranslation("kanji.playClickToContinue")));
+    }
+  }
+
+  function outOfTime() {
+    return !!(test && test.started && Date.now() >= test.endsAt);
+  }
+
+  function finish(passed, reason) {
+    if (!test || test.view === "result") return;
+    stopTimer();
+    test.view = "result";
+    test.passed = !!passed;
+    test.reason = reason || "";
+    if (test.passed) {
+      const codes = new Set(readAficPassed());
+      codes.add(test.code);
+      localStorage.setItem(AFIC_STORAGE_KEY, JSON.stringify({ passed: aficPassedList(codes) }));
+      refreshText();
+    }
+    renderTest();
+  }
+
+  function settle(ok) {
+    test.round.answered = true;
+    test.round.ok = !!ok;
+    if (!ok) test.wrongs += 1;
+    if (test.wrongs > AFIC_MAX_WRONG) {
+      finish(false, "wrong");
+      return;
+    }
+    test.view = "feedback";
+    renderTest();
+  }
+
+  function judge(choice) {
+    if (!test || test.view !== "question" || !test.round || test.round.phase !== 1 || test.round.answered) return;
+    if (outOfTime()) {
+      finish(false, "time");
+      return;
+    }
+    const question = test.questions[test.index];
+    test.round.choice = choice;
+    if (choice === "x" && !question.correctShown) {
+      test.round.phase = 2;
+      test.round.options = optionsFor(question);
+      renderTest();
+      return;
+    }
+    settle(choice === "o" && question.correctShown);
+  }
+
+  function pick(label) {
+    if (!test || test.view !== "question" || !test.round || test.round.phase !== 2 || test.round.answered) return;
+    if (outOfTime()) {
+      finish(false, "time");
+      return;
+    }
+    test.round.picked = label;
+    settle(plain(label) === plain(test.questions[test.index].meaning));
+  }
+
+  function advance() {
+    if (!test || test.view !== "feedback") return;
+    if (outOfTime()) {
+      finish(false, "time");
+      return;
+    }
+    if (test.index + 1 >= test.questions.length) {
+      finish(true);
+      return;
+    }
+    test.index += 1;
+    test.view = "question";
+    test.round = { phase: 1, choice: "", picked: "", answered: false, ok: false, options: [] };
+    renderTest();
+  }
+
+  function begin() {
+    if (!test || test.started || !test.ready || test.failedLoad) return;
+    test.started = true;
+    test.view = "question";
+    test.index = 0;
+    test.wrongs = 0;
+    test.round = { phase: 1, choice: "", picked: "", answered: false, ok: false, options: [] };
+    test.endsAt = Date.now() + AFIC_SECONDS * 1000;
+    test.timer = setInterval(() => {
+      if (!test || test.view === "result") return;
+      const node = card.querySelector(".afic-timer");
+      if (node) node.textContent = String(secondsLeft());
+      if (outOfTime()) finish(false, "time");
+    }, 200);
+    renderTest();
+  }
+
+  function onSurfaceClick() {
+    if (!test) return;
+    if (test.view === "intro") {
+      if (test.failedLoad) return;
+      if (!test.ready) {
+        test.arm = true;
+        return;
+      }
+      begin();
+      return;
+    }
+    if (test.view === "feedback") advance();
+    else if (test.view === "result") closeTest();
+  }
+
+  function buildRadicalQuestions(pool) {
+    if (pool.length < AFIC_RADICAL_COUNT + 1) return null;
+    return shuffle(pool.slice(0, AFIC_RADICAL_COUNT).map((item) => {
+      let correctShown = Math.random() < 0.5;
+      let shown = item.meaning;
+      if (!correctShown) {
+        const others = pool.filter((candidate) => plain(candidate.meaning) !== plain(item.meaning));
+        if (!others.length) correctShown = true;
+        else shown = others[Math.floor(Math.random() * others.length)].meaning;
+      }
+      return { kind: "radical", word: item.word, meaning: item.meaning, meanings: item.meanings, shown, correctShown, pool };
+    }));
+  }
+
+  function loadRadicals(gen) {
+    const fromLines = (lines) => {
+      const pool = [];
+      const seen = new Set();
+      (Array.isArray(lines) ? lines : []).forEach((line) => {
+        const parts = String(line).split("\t");
+        const word = (parts[1] || "").trim();
+        const meaning = (parts[4] || "").trim();
+        if (!word || !meaning || seen.has(word)) return;
+        seen.add(word);
+        pool.push({ word, meaning, meanings: [meaning] });
+      });
+      return shuffle(pool);
+    };
+    if (window.KANJI_DATA && Array.isArray(window.KANJI_DATA.radicals)) {
+      return Promise.resolve(fromLines(window.KANJI_DATA.radicals));
+    }
+    const owned = !document.querySelector('script[src*="kanji-data.js"]');
+    const script = document.createElement("script");
+    return new Promise((resolve, reject) => {
+      script.onload = () => {
+        const lines = (window.KANJI_DATA && window.KANJI_DATA.radicals) || [];
+        const pool = gen === testGen ? fromLines(lines) : [];
+        if (owned) delete window.KANJI_DATA;
+        script.remove();
+        resolve(pool);
+      };
+      script.onerror = () => {
+        script.remove();
+        reject(new Error("load"));
+      };
+      script.src = "kanji-data.js?v=0.7";
+      document.body.appendChild(script);
+    });
+  }
+
+  function acceptQuestions(gen, questions) {
+    if (gen !== testGen || !test) return;
+    if (!questions) {
+      test.failedLoad = true;
+      renderTest();
+      return;
+    }
+    test.questions = questions;
+    test.ready = true;
+    if (test.arm) begin();
+    else renderTest();
+  }
+
+  function openAficTest(code) {
+    if (code !== AFIC_RADICAL && (!AFIC_LETTERS[code] || code === getStoredLang())) return;
+    closeTest();
+    const gen = ++testGen;
+    const ui = getStoredLang();
+    test = {
+      code, ui, view: "intro", ready: false, failedLoad: false, arm: false, started: false,
+      questions: [], index: 0, wrongs: 0, round: null, timer: 0, endsAt: 0, passed: false, reason: "",
+    };
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    overlay.classList.remove("hidden");
+    renderTest();
+    if (code === AFIC_RADICAL) {
+      loadRadicals(gen).then((pool) => acceptQuestions(gen, buildRadicalQuestions(pool))).catch(() => {
+        if (gen !== testGen || !test) return;
+        test.failedLoad = true;
+        renderTest();
+      });
+      return;
+    }
+    const pair = ui + "-" + code;
+    loadPool("vocabulary", pair, false, gen).then((vocab) => {
+      if (gen !== testGen) return null;
+      return loadPool("sentence", pair, true, gen).then((sentences) => ({ vocab, sentences }));
+    }).then((pools) => {
+      if (gen !== testGen || !pools) return;
+      acceptQuestions(gen, buildQuestions(pools.vocab, pools.sentences));
+    }).catch(() => {
+      if (gen !== testGen || !test) return;
+      test.failedLoad = true;
+      renderTest();
+    });
   }
 
   badge.addEventListener("click", () => {
@@ -832,6 +1712,7 @@ function setupUsernameBadge() {
     anonymous.checked = !input.value;
     input.disabled = anonymous.checked;
     popup.classList.remove("hidden");
+    renderLangs();
     if (!anonymous.checked) input.focus();
   });
   anonymous.addEventListener("change", () => {
@@ -849,6 +1730,31 @@ function setupUsernameBadge() {
   popup.querySelector("#username-close").addEventListener("click", closePopup);
   popup.addEventListener("click", (event) => {
     if (event.target === popup) closePopup();
+  });
+  overlay.addEventListener("click", (event) => {
+    if (event.target.closest(".afic-test-close")) return;
+    if (test && test.view === "question" && event.target.closest("button")) return;
+    onSurfaceClick();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (!test || overlay.classList.contains("hidden")) return;
+    if (event.target && event.target.closest && event.target.closest("input, textarea")) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeTest();
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      if (test.view === "question") return;
+      event.preventDefault();
+      onSurfaceClick();
+      return;
+    }
+    if (test.view !== "question" || !test.round || test.round.phase !== 1) return;
+    const key = event.key.toLowerCase();
+    if (key !== "o" && key !== "x") return;
+    event.preventDefault();
+    judge(key);
   });
   window.refreshUsernameUi = refreshText;
   refreshText();
@@ -1639,12 +2545,16 @@ function makeEnglishHubPairId(langCode) {
   return langCode + "-en";
 }
 
+function isUnknownTranslationLang(code) {
+  return code === "unknown";
+}
+
 /** Foreign language for an English-hub local entry (es for apple↔manzana). */
 function getEntryForeignHubLang(entry) {
   if (!entry || entry.isCore) return "";
   const origin = entry.originLanguage || entry.translationSource || "en";
   if (origin && origin !== "en") return origin;
-  if (entry.translationLanguage && entry.translationLanguage !== "en") return entry.translationLanguage;
+  if (entry.translationLanguage && entry.translationLanguage !== "en" && !isUnknownTranslationLang(entry.translationLanguage)) return entry.translationLanguage;
   const keys = Object.keys(entry.translations || {}).filter((code) => code !== "en");
   return keys[0] || "";
 }
@@ -2952,6 +3862,8 @@ function uint8ToText(bytes) {
 
 function getEntryDisplayWord(entry, lang) {
   if (!entry) return "";
+  const edited = entry._entryId && (readAficEdits().dictionary["entry:" + entry._entryId] || {})[lang];
+  if (edited) return edited;
   if (entry.isCore) {
     const main = entry.slots && entry.slots[0] && entry.slots[0].main;
     if (!main || main.id == null) return entry.definition || "";
@@ -4138,6 +5050,7 @@ if (page === "create") {
   }
 
   function ensureDistinctLanguages(changedSelect) {
+    if (isUnknownTranslationLang(translationLanguageSelect.value)) return;
     if (originLanguageSelect.value !== translationLanguageSelect.value) return;
     const other = changedSelect === originLanguageSelect ? translationLanguageSelect : originLanguageSelect;
     const fallback = getDefaultTranslationLanguage(changedSelect.value);
@@ -4170,6 +5083,8 @@ if (page === "create") {
       translatedPronunciationInput,
       translationLanguageSelect.value
     );
+    const translatedField = translatedWordInput && translatedWordInput.closest(".create-word-field");
+    if (translatedField) translatedField.classList.toggle("hidden", isUnknownTranslationLang(translationLanguageSelect.value));
   }
 
   function setEditingState(label) {
@@ -4258,8 +5173,12 @@ if (page === "create") {
     retrievedWorldLine = entry.sourceWorldLine || "";
     const pair = resolveEntryLanguagePair(entry);
     originLanguageSelect.value = LANGUAGES[pair.origin] ? pair.origin : "en";
-    translationLanguageSelect.value = LANGUAGES[pair.translated] ? pair.translated : getDefaultTranslationLanguage(originLanguageSelect.value);
-    ensureDistinctLanguages(originLanguageSelect);
+    if (isUnknownTranslationLang(entry.translationLanguage)) {
+      translationLanguageSelect.value = "unknown";
+    } else {
+      translationLanguageSelect.value = LANGUAGES[pair.translated] ? pair.translated : getDefaultTranslationLanguage(originLanguageSelect.value);
+      ensureDistinctLanguages(originLanguageSelect);
+    }
     updateManualLanguageFields();
     const translations = entry.translations || {};
     originWordInput.value = translations[originLanguageSelect.value] ||
@@ -4783,11 +5702,12 @@ if (page === "create") {
   submitBtn.addEventListener("click", async () => {
     const originLang = originLanguageSelect.value;
     const translatedLang = translationLanguageSelect.value;
+    const translationIsUnknown = isUnknownTranslationLang(translatedLang);
     const originWord = originWordInput.value.trim();
     const translatedWord = translatedWordInput.value.trim();
     if (!originWord) return alert(getTranslation("create.enterOriginWord"));
-    if (!translatedWord) return alert(getTranslation("create.enterTranslatedWord"));
-    if (originLang === translatedLang) return alert(getTranslation("create.languagesMustDiffer"));
+    if (!translationIsUnknown && !translatedWord) return alert(getTranslation("create.enterTranslatedWord"));
+    if (!translationIsUnknown && originLang === translatedLang) return alert(getTranslation("create.languagesMustDiffer"));
     const selectedPartsOfSpeech = getSelectedPartsOfSpeech();
     if (!selectedPartsOfSpeech.length) return alert(getTranslation("create.selectPartOfSpeech"));
     if (selectedPartsOfSpeech.includes("Compound") && compoundParts.length < 2) {
@@ -4800,7 +5720,7 @@ if (page === "create") {
     if (originPronConfig && !originPronunciation) {
       return alert(formatTranslation("create.enterPronunciation", { label: originPronConfig.label }));
     }
-    if (translatedPronConfig && !translatedPronunciation) {
+    if (!translationIsUnknown && translatedPronConfig && !translatedPronunciation) {
       return alert(formatTranslation("create.enterPronunciation", { label: translatedPronConfig.label }));
     }
 
@@ -4828,7 +5748,7 @@ if (page === "create") {
     const retrievedCross = retrievedWorldLine ? decodeCrossWorldLine(retrievedWorldLine) : null;
     // English-hub world edits keep the original language pair (foreign ↔ English).
     // Cross-pair (e.g. fr-ko) edits keep both non-English sides from the form.
-    if (retrievedWorldLine && !retrievedCross) {
+    if (retrievedWorldLine && !retrievedCross && !translationIsUnknown) {
       const worldOriginCode = WORLD_ORIGIN_TO_LANG[getCreateWorldField(retrievedWorldLine, 7)] || "";
       if (worldOriginCode && worldOriginCode !== "en") {
         saveOriginLang = worldOriginCode;
@@ -4853,7 +5773,7 @@ if (page === "create") {
     }
     const customTranslations = {};
     customTranslations[saveOriginLang] = saveOriginWord;
-    customTranslations[saveTranslatedLang] = saveTranslatedWord;
+    if (!translationIsUnknown) customTranslations[saveTranslatedLang] = saveTranslatedWord;
     const englishWord = customTranslations.en || (retrievedCross && retrievedCross.english) || saveOriginWord;
     let pinyin = "";
     let hiragana = "";
@@ -4864,7 +5784,7 @@ if (page === "create") {
       else if (isLatinLettersLang(lang)) latinLetters = value;
     }
     assignPronunciation(saveOriginLang, saveOriginPronunciation);
-    assignPronunciation(saveTranslatedLang, saveTranslatedPronunciation);
+    if (!translationIsUnknown) assignPronunciation(saveTranslatedLang, saveTranslatedPronunciation);
     let existingIndex = editingEntryId ? findEntryIndexById(entries, editingEntryId) : -1;
     if (existingIndex < 0 && retrievedWorldLine) {
       existingIndex = findLocalOverrideIndexForWorldLine(entries, retrievedWorldLine);
@@ -4896,14 +5816,16 @@ if (page === "create") {
       translationLanguage: saveTranslatedLang,
       translations: customTranslations,
       sourceWorldLine,
-      homographs: {
-        [saveOriginLang]: isCreateHomographStarOn(
-          saveOriginLang === originLang ? originHomographStarBtn : translatedHomographStarBtn
-        ),
-        [saveTranslatedLang]: isCreateHomographStarOn(
-          saveTranslatedLang === translatedLang ? translatedHomographStarBtn : originHomographStarBtn
-        ),
-      },
+      homographs: translationIsUnknown
+        ? { [saveOriginLang]: isCreateHomographStarOn(originHomographStarBtn) }
+        : {
+          [saveOriginLang]: isCreateHomographStarOn(
+            saveOriginLang === originLang ? originHomographStarBtn : translatedHomographStarBtn
+          ),
+          [saveTranslatedLang]: isCreateHomographStarOn(
+            saveTranslatedLang === translatedLang ? translatedHomographStarBtn : originHomographStarBtn
+          ),
+        },
       partOfSpeech: selectedPartsOfSpeech,
       compoundParts: selectedPartsOfSpeech.includes("Compound") ? compoundParts.map((part) => Object.assign({}, part)) : [],
       pinyin,
@@ -7406,6 +8328,7 @@ if (page === "transfers") {
     if (payload.images && Object.keys(payload.images).length) sections.push("images");
     if (payload.sentences && payload.sentences.length) sections.push("sentences");
     if (payload.comments && payload.comments.length) sections.push("comments");
+    if (payload.aficText) sections.push("afic");
 
     const report = async (percent) => {
       if (typeof onProgress === "function") await onProgress(percent);
@@ -7470,6 +8393,11 @@ if (page === "transfers") {
       });
     }
 
+    if (sections.includes("afic")) {
+      await report(93);
+      files.push({ name: "AFIC.txt", data: encoder.encode(payload.aficText) });
+    }
+
     await report(95);
     return files;
   }
@@ -7481,7 +8409,8 @@ if (page === "transfers") {
     const images = getSelectedImages(all);
     const sentences = getSelectedSentences(all);
     const comments = getSelectedComments(all);
-    if (!dictionary.length && !Object.keys(images).length && !sentences.length && !comments.length) {
+    const aficText = aficLogText(readAficEdits().log);
+    if (!dictionary.length && !Object.keys(images).length && !sentences.length && !comments.length && !aficText) {
       alert(getTransfersText().nothingSelected);
       return;
     }
@@ -7491,7 +8420,7 @@ if (page === "transfers") {
       await yieldToUi();
       setTransferExportProgress(5, t.exportLoadingPreparing || "Preparing export…");
       const files = await buildTransferZipFiles(
-        { dictionary, images, sentences, comments },
+        { dictionary, images, sentences, comments, aficText },
         async (percent) => {
           setTransferExportProgress(percent, t.exportLoadingPackaging || "Packaging files…");
           await yieldToUi();
@@ -7517,6 +8446,7 @@ if (page === "transfers") {
       images: data.images && typeof data.images === "object" ? data.images : {},
       sentences: Array.isArray(data.sentences) ? data.sentences : [],
       comments: Array.isArray(data.comments) ? data.comments : [],
+      aficLog: [],
     };
   }
 
@@ -7588,6 +8518,8 @@ if (page === "transfers") {
       } catch { /* ignore */ }
     }
 
+    const aficLog = parseAficLog(readText("AFIC.txt"));
+
     // Legacy single JSON stored inside zip.
     const legacyJsonName = names.find((name) => /(^|\/)(transfer_all|images_export)\.json$/i.test(name) || name === "package.json");
     if (legacyJsonName && !dictionary.length && !Object.keys(images).length) {
@@ -7596,7 +8528,7 @@ if (page === "transfers") {
       } catch { /* ignore */ }
     }
 
-    return { dictionary, images, sentences, comments };
+    return { dictionary, images, sentences, comments, aficLog };
   }
 
   async function packageFromFileList(fileList) {
@@ -7672,7 +8604,9 @@ if (page === "transfers") {
       } catch { /* ignore */ }
     }
 
-    return { dictionary, images, sentences, comments };
+    const aficLog = parseAficLog(await readText("AFIC.txt"));
+
+    return { dictionary, images, sentences, comments, aficLog };
   }
 
   async function importTransferPackage(pkg) {
@@ -7783,6 +8717,10 @@ if (page === "transfers") {
         if (mapped) entry.parentId = mapped;
       });
       saveTransferComments(list);
+    }
+
+    if (Array.isArray(pkg.aficLog) && pkg.aficLog.length) {
+      mergeAficLog(pkg.aficLog);
     }
 
     alert(formatTransfersText(getTransfersText().importSummary, {
@@ -9546,8 +10484,9 @@ if (page === "dictionary") {
   function createCustomInfoTable(entry) {
     const translations = entry.translations || {};
     const origin = entry.originLanguage || entry.translationSource || "en";
-    let translated = entry.translationLanguage || "";
-    if (!translated || translated === origin) {
+    const translationIsUnknown = isUnknownTranslationLang(entry.translationLanguage);
+    let translated = translationIsUnknown ? "" : (entry.translationLanguage || "");
+    if (!translationIsUnknown && (!translated || translated === origin)) {
       const keys = Object.keys(translations).filter((code) => code !== origin);
       if (origin !== "en") {
         const nonEn = keys.filter((code) => code !== "en");
@@ -9587,7 +10526,7 @@ if (page === "dictionary") {
     if (!entry.wordId) ensureEntryWordId(entry, ensureCoreWordsInDictionary());
     const rows = [
       [LANGUAGES[leftLang] || leftLang, leftWord, leftLang],
-      [rightLang ? (LANGUAGES[rightLang] || rightLang) : getTranslation("dictionary.translation"), rightWord, rightLang || ""],
+      [rightLang ? (LANGUAGES[rightLang] || rightLang) : (translationIsUnknown ? (getTranslation("create.unknownLanguage") || "Unknown") : getTranslation("dictionary.translation")), rightWord, rightLang || ""],
       [getTranslation("dictionary.partOfSpeech"), [].concat(entry.partOfSpeech || []).join(", ")],
       ["ID#", entry.wordId != null ? String(entry.wordId) : ""],
     ];
@@ -9704,6 +10643,77 @@ if (page === "dictionary") {
     list.appendChild(entryDiv);
   }
 
+  function openAficDictionary(detail) {
+    let box = document.getElementById("afic-word-box");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "afic-word-box";
+      box.className = "word-context-box hidden";
+      box.innerHTML = '<div class="word-context-content"><h2 id="afic-word-title"></h2><div id="afic-word-fields" class="afic-word-grid"></div><p id="afic-word-meta" class="word-context-metadata"></p><div class="word-context-actions"><button type="button" id="afic-word-save">Save</button><button type="button" id="afic-word-create">Edit in Create</button><button type="button" id="afic-word-close">Close</button></div></div>';
+      document.body.appendChild(box);
+      box.addEventListener("click", (e) => {
+        if (e.target === box) box.classList.add("hidden");
+      });
+      box.querySelector("#afic-word-close").addEventListener("click", () => box.classList.add("hidden"));
+    }
+    const canEdit = aficCanEditPair(detail.leftLang, detail.rightLang);
+    box.querySelector("#afic-word-title").textContent = detail.title || "";
+    const fields = box.querySelector("#afic-word-fields");
+    fields.textContent = "";
+    const inputs = {};
+    const rows = detail.rows || [
+      { key: detail.leftLang, label: LANGUAGES[detail.leftLang] || detail.leftLang, value: detail.leftText, lang: detail.leftLang },
+      { key: detail.rightLang, label: LANGUAGES[detail.rightLang] || detail.rightLang, value: detail.rightText, lang: detail.rightLang },
+    ];
+    rows.forEach((row) => {
+      const label = document.createElement("label");
+      label.append(document.createTextNode((row.label || row.key) + " "));
+      if (canEdit) {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = row.value || "";
+        if (row.lang) input.lang = row.lang;
+        label.append(input);
+        inputs[row.key] = input;
+      } else {
+        const span = document.createElement("span");
+        if (row.lang) span.lang = row.lang;
+        span.textContent = row.value || "";
+        label.append(span);
+      }
+      fields.append(label);
+    });
+    const meta = box.querySelector("#afic-word-meta");
+    meta.textContent = detail.meta || "";
+    const save = box.querySelector("#afic-word-save");
+    const create = box.querySelector("#afic-word-create");
+    save.classList.toggle("hidden", !canEdit);
+    create.classList.toggle("hidden", !canEdit || !detail.worldLine);
+    save.onclick = () => {
+      const store = readAficEdits();
+      let changed = false;
+      rows.forEach((row) => {
+        const input = inputs[row.key];
+        if (!input) return;
+        if (pushAficLog(store, "dictionary", detail.target, row.key, row.value, input.value)) {
+          if (!store.dictionary[detail.target]) store.dictionary[detail.target] = {};
+          store.dictionary[detail.target][row.key] = aficClean(input.value);
+          changed = true;
+        }
+      });
+      if (changed) {
+        writeAficEdits(store);
+        loadEntries();
+      }
+      box.classList.add("hidden");
+    };
+    create.onclick = () => {
+      box.classList.add("hidden");
+      if (detail.worldLine) openDictionaryEditor({ worldLine: detail.worldLine, language: detail.rightLang || getStoredLang() });
+    };
+    box.classList.remove("hidden");
+  }
+
   function renderWorldEntry(line, exceptionRow) {
     const parts = line.split("\t");
     if (parts.length !== 8) return;
@@ -9715,13 +10725,26 @@ if (page === "dictionary") {
     if (getWorldStampStatus(parts[6]) !== "unstamped") stampDiv.textContent = parts[6];
     const originCode = WORLD_ORIGIN_TO_LANG[parts[7]] || "en";
     const pairId = makeEnglishHubPairId(originCode);
+    const target = worldEditKey(line);
+    const over = readAficEdits().dictionary[target] || {};
+    const english = over.en != null ? over.en : (parts[0] || "");
+    const foreign = over[originCode] != null ? over[originCode] : (parts[1] || "");
+    const pos = over.pos != null ? over.pos : (parts[5] || "");
+    const pronParts = parts.slice();
+    if (over.pronunciation != null) {
+      const pronIndex = pronunciationFieldIndexForLang(originCode);
+      if (pronIndex >= 0) pronParts[pronIndex] = over.pronunciation;
+      else if (pronParts[2]) pronParts[2] = over.pronunciation;
+      else if (pronParts[3]) pronParts[3] = over.pronunciation;
+      else pronParts[4] = over.pronunciation;
+    }
     // Keep English/Translation columns stable across UI languages: English value stays English.
-    const pronunciation = getPronunciationField(parts);
+    const pronunciation = getPronunciationField(pronParts);
     const wordId = getWorldLineWordId(line);
     const table = createDictionaryInfoTable([
-      [getTranslation("dictionary.english"), parts[0] || "", "en"],
-      [getTranslation("dictionary.translation"), parts[1] || "", originCode],
-      [getTranslation("dictionary.partOfSpeech"), parts[5]],
+      [getTranslation("dictionary.english"), english, "en"],
+      [getTranslation("dictionary.translation"), foreign, originCode],
+      [getTranslation("dictionary.partOfSpeech"), pos],
       [getTranslation("dictionary.originLanguage"), formatLanguagePairLabel(pairId, lang) || parts[7]],
       ["ID#", wordId ? String(wordId) : ""],
       pronunciation,
@@ -9730,7 +10753,24 @@ if (page === "dictionary") {
     entryDiv.appendChild(table);
     attachExceptionBar(entryDiv, exceptionRow);
     entryDiv.addEventListener("click", () => {
-      openDictionaryEditor({ worldLine: line, language: lang === "en" ? "en" : originCode });
+      const rows = [
+        { key: "en", label: LANGUAGES.en || "English", value: english, lang: "en" },
+        { key: originCode, label: LANGUAGES[originCode] || originCode, value: foreign, lang: originCode },
+        { key: "pos", label: getTranslation("dictionary.partOfSpeech"), value: pos },
+      ];
+      const pronLabel = pronunciationLabelForLang(originCode) || pronunciation[0];
+      if (pronLabel || pronunciation[1]) {
+        rows.push({ key: "pronunciation", label: pronLabel || "Pronunciation", value: pronunciation[1] || "", lang: originCode });
+      }
+      openAficDictionary({
+        title: english + " — " + foreign,
+        leftLang: "en",
+        rightLang: originCode,
+        rows,
+        target,
+        worldLine: line,
+        meta: [formatLanguagePairLabel(pairId, lang) || parts[7], wordId ? "ID# " + wordId : ""].filter(Boolean).join(" · "),
+      });
     });
     list.appendChild(entryDiv);
   }
@@ -9752,27 +10792,51 @@ if (page === "dictionary") {
     const wordLabel = LANGUAGES[entry.wordLang] || getTranslation("dictionary.language");
     const translationLabel = LANGUAGES[entry.translationLang] || getTranslation("dictionary.translation");
     const crossWordId = getCrossEntryWordId(entry);
+    const target = crossEditKey(entry);
+    const over = readAficEdits().dictionary[target] || {};
+    const wordText = over[entry.wordLang] != null ? over[entry.wordLang] : (entry.word || "");
+    const translationText = over[entry.translationLang] != null ? over[entry.translationLang] : (entry.translation || "");
+    const pos = over.pos != null ? over.pos : (entry.pos || "");
+    const wordPron = over.wordPronunciation != null ? over.wordPronunciation : (entry.wordPronunciation || "");
+    const translationPron = over.translationPronunciation != null ? over.translationPronunciation : (entry.translationPronunciation || "");
     const fields = [
-      [wordLabel, entry.word || "", entry.wordLang || ""],
-      [translationLabel, entry.translation || "", entry.translationLang || ""],
-      [getTranslation("dictionary.partOfSpeech"), entry.pos || ""],
+      [wordLabel, wordText, entry.wordLang || ""],
+      [translationLabel, translationText, entry.translationLang || ""],
+      [getTranslation("dictionary.partOfSpeech"), pos],
       [getTranslation("dictionary.originLanguage"), entry.originLabel || formatLanguagePairLabel(entry.pairId, uiLang)],
       ["ID#", crossWordId ? String(crossWordId) : ""],
     ];
-    if (entry.wordPronunciation) {
-      fields.push([pronunciationLabelForLang(entry.wordLang), entry.wordPronunciation]);
+    if (wordPron || pronunciationLabelForLang(entry.wordLang)) {
+      const label = pronunciationLabelForLang(entry.wordLang);
+      if (label || wordPron) fields.push([label || "Pronunciation", wordPron]);
     }
-    if (entry.translationPronunciation) {
-      fields.push([pronunciationLabelForLang(entry.translationLang), entry.translationPronunciation]);
+    if (translationPron || pronunciationLabelForLang(entry.translationLang)) {
+      const label = pronunciationLabelForLang(entry.translationLang);
+      if (label || translationPron) fields.push([label || "Pronunciation", translationPron]);
     }
     const table = createDictionaryInfoTable(fields);
     entryDiv.appendChild(stampDiv);
     entryDiv.appendChild(table);
     entryDiv.addEventListener("click", () => {
       const crossLine = entry.worldLine || encodeCrossWorldLine(entry);
-      if (crossLine) {
-        openDictionaryEditor({ worldLine: crossLine, language: entry.wordLang || uiLang });
-      }
+      const rows = [
+        { key: entry.wordLang, label: wordLabel, value: wordText, lang: entry.wordLang },
+        { key: entry.translationLang, label: translationLabel, value: translationText, lang: entry.translationLang },
+        { key: "pos", label: getTranslation("dictionary.partOfSpeech"), value: pos },
+      ];
+      const wordPronLabel = pronunciationLabelForLang(entry.wordLang);
+      if (wordPronLabel || wordPron) rows.push({ key: "wordPronunciation", label: wordPronLabel || "Pronunciation", value: wordPron, lang: entry.wordLang });
+      const translationPronLabel = pronunciationLabelForLang(entry.translationLang);
+      if (translationPronLabel || translationPron) rows.push({ key: "translationPronunciation", label: translationPronLabel || "Pronunciation", value: translationPron, lang: entry.translationLang });
+      openAficDictionary({
+        title: wordText + " — " + translationText,
+        leftLang: entry.wordLang,
+        rightLang: entry.translationLang,
+        rows,
+        target,
+        worldLine: crossLine,
+        meta: [entry.originLabel || formatLanguagePairLabel(entry.pairId, uiLang), crossWordId ? "ID# " + crossWordId : ""].filter(Boolean).join(" · "),
+      });
     });
     list.appendChild(entryDiv);
   }
@@ -10546,7 +11610,116 @@ if (page === "dictionary") {
     wordContextMetadata.textContent = entry.createdBy
       ? formatFirstCreatedBy(entry) + " · " + formatLastEditedBy(entry)
       : "";
-    wordContextEditCreate.classList.toggle("hidden", !!entry.isCore);
+    const editableLangs = AFIC_SORT.filter((code) => {
+      const text = getEntryDisplayWord(entry, code);
+      if (!text || !AFIC_LETTERS[code]) return false;
+      if (isAdminMode()) return true;
+      if (entry.isCore || !aficHasLetters(AFIC_LETTERS[code])) return false;
+      return AFIC_SORT.some((other) => {
+        if (other === code || !AFIC_LETTERS[other] || !aficHasLetters(AFIC_LETTERS[other])) return false;
+        return !!getEntryDisplayWord(entry, other);
+      });
+    });
+    wordContextEditCreate.classList.toggle("hidden", !!entry.isCore || !editableLangs.length);
+    let host = document.getElementById("word-context-afic");
+    if (!host && wordContextNote && wordContextNote.parentElement) {
+      host = document.createElement("div");
+      host.id = "word-context-afic";
+      host.className = "afic-word-grid";
+      wordContextNote.parentElement.insertBefore(host, wordContextNote);
+    }
+    if (host) {
+      host.textContent = "";
+      host.classList.toggle("hidden", !editableLangs.length);
+      const inputs = {};
+      editableLangs.forEach((code) => {
+        const label = document.createElement("label");
+        label.append(document.createTextNode((LANGUAGES[code] || code) + " "));
+        const input = document.createElement("input");
+        input.type = "text";
+        input.lang = code;
+        input.value = getEntryDisplayWord(entry, code);
+        label.append(input);
+        host.append(label);
+        inputs[code] = input;
+      });
+      if (editableLangs.length) {
+        const entryOver = (readAficEdits().dictionary || {})["entry:" + (entry._entryId || entryId)] || {};
+        const extras = [[
+          "pos",
+          getTranslation("dictionary.partOfSpeech"),
+          entryOver.pos != null ? entryOver.pos : [].concat(entry.partOfSpeech || []).filter(Boolean).join(" & "),
+        ]];
+        if (editableLangs.indexOf("zh") >= 0 || entry.pinyin || entryOver.pinyin) {
+          extras.push(["pinyin", pronunciationLabelForLang("zh") || "Pinyin", entryOver.pinyin != null ? entryOver.pinyin : (entry.pinyin || "")]);
+        }
+        if (editableLangs.indexOf("ja") >= 0 || entry.hiragana || entryOver.hiragana) {
+          extras.push(["hiragana", pronunciationLabelForLang("ja") || "Hiragana", entryOver.hiragana != null ? entryOver.hiragana : (entry.hiragana || "")]);
+        }
+        if (editableLangs.indexOf("ru") >= 0 || editableLangs.indexOf("ko") >= 0 || entry.latinLetters || entryOver.latinLetters) {
+          extras.push(["latinLetters", pronunciationLabelForLang("ru") || "Latin letters", entryOver.latinLetters != null ? entryOver.latinLetters : (entry.latinLetters || "")]);
+        }
+        extras.forEach(([key, name, value]) => {
+          const label = document.createElement("label");
+          label.append(document.createTextNode(name + " "));
+          const input = document.createElement("input");
+          input.type = "text";
+          input.value = value || "";
+          label.append(input);
+          host.append(label);
+          inputs[key] = input;
+        });
+      }
+      if (editableLangs.length) {
+        const save = document.createElement("button");
+        save.type = "button";
+        save.textContent = "Save";
+        save.addEventListener("click", () => {
+          const entries = JSON.parse(localStorage.getItem("dictionaryEntries") || "[]");
+          const index = findEntryIndexById(entries, entryId);
+          const current = index >= 0 ? entries[index] : null;
+          if (!current) return;
+          const store = readAficEdits();
+          const target = "entry:" + (current._entryId || entryId);
+          let changed = false;
+          if (!current.translations) current.translations = {};
+          Object.keys(inputs).forEach((code) => {
+            const after = inputs[code].value;
+            if (!store.dictionary[target]) store.dictionary[target] = {};
+            if (code === "pos") {
+              const before = [].concat(current.partOfSpeech || []).filter(Boolean).join(" & ");
+              if (!pushAficLog(store, "dictionary", target, code, before, after)) return;
+              current.partOfSpeech = aficClean(after).split(/\s*&\s*/).filter(Boolean);
+              store.dictionary[target][code] = aficClean(after);
+              changed = true;
+              return;
+            }
+            if (code === "pinyin" || code === "hiragana" || code === "latinLetters") {
+              const before = current[code] || "";
+              if (!pushAficLog(store, "dictionary", target, code, before, after)) return;
+              current[code] = aficClean(after);
+              store.dictionary[target][code] = aficClean(after);
+              changed = true;
+              return;
+            }
+            const before = getEntryDisplayWord(current, code);
+            if (!pushAficLog(store, "dictionary", target, code, before, after)) return;
+            current.translations[code] = aficClean(after);
+            if (code === "en") current.definition = aficClean(after);
+            store.dictionary[target][code] = aficClean(after);
+            changed = true;
+          });
+          if (changed) {
+            markEntryEdited(current);
+            localStorage.setItem("dictionaryEntries", JSON.stringify(entries));
+            writeAficEdits(store);
+            loadEntries();
+          }
+          closeWordContext();
+        });
+        host.append(save);
+      }
+    }
     wordContextBox.classList.remove("hidden");
   }
 
@@ -11101,8 +12274,9 @@ if (page === "web") {
   function createWebCustomInfoTable(entry) {
     const translations = entry.translations || {};
     const origin = entry.originLanguage || entry.translationSource || "en";
-    let translated = entry.translationLanguage || "";
-    if (!translated || translated === origin) {
+    const translationIsUnknown = isUnknownTranslationLang(entry.translationLanguage);
+    let translated = translationIsUnknown ? "" : (entry.translationLanguage || "");
+    if (!translationIsUnknown && (!translated || translated === origin)) {
       const keys = Object.keys(translations).filter((code) => code !== origin);
       if (origin !== "en") {
         const nonEn = keys.filter((code) => code !== "en");
@@ -11122,7 +12296,7 @@ if (page === "web") {
       : "";
     const rows = [
       [LANGUAGES[origin] || origin, originWord],
-      [translated ? (LANGUAGES[translated] || translated) : getTranslation("dictionary.translation"), translatedWord],
+      [translated ? (LANGUAGES[translated] || translated) : (translationIsUnknown ? (getTranslation("create.unknownLanguage") || "Unknown") : getTranslation("dictionary.translation")), translatedWord],
       [getTranslation("dictionary.partOfSpeech"), [].concat(entry.partOfSpeech || []).join(", ")],
     ];
     [
@@ -14074,8 +15248,41 @@ function learnAreaTitle(code, area) {
 }
 
 const learnAreaHref = (code, area) => `learn-vocab.html?lang=${code}${area === "vocabulary" ? "" : `&area=${area}`}`;
+const learnBrowseHref = (code, area) => `learn-area.html?lang=${code}&area=${area}`;
 
-// learn/data/ready.js (built with the curricula) lists the UI-language/learned-language pairs that have data.
+function learnStoredList(store, kind) {
+  try {
+    const value = JSON.parse(localStorage.getItem(store + kind));
+    return Array.isArray(value) ? value : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// A lesson stores each row as its source line and builds a card only when it is played. Past this many rows
+// the shared-definition index is built one lesson at a time, and the plan warns that it can run out of memory.
+// One vocabulary language stays under it. A sentence list or several languages goes over it.
+const LEARN_HEAVY_ROWS = 400000;
+
+// Learned percent, then golden percent, each capped at 100. The total is the learned language's list.
+function learnPercents(code, area) {
+  const store = area === "vocabulary" ? "vocab" : area === "sentence" ? "sentence" : "alphabet";
+  const total = ((window.LEARN_COUNTS || {})[area] || {})[code] || 0;
+  if (!total) return null;
+  const prefix = code + "|";
+  let learned = 0;
+  learnStoredList(store, "Completed").forEach((key) => {
+    if (typeof key === "string" && key.startsWith(prefix)) learned += 1;
+  });
+  let golden = 0;
+  learnStoredList(store, "Golden").forEach((key) => {
+    if (typeof key === "string" && key.startsWith(prefix)) golden += 1;
+  });
+  const cap = (n) => Math.min(100, Math.round((n / total) * 100));
+  return { learned: cap(learned), golden: cap(golden) };
+}
+
+// NewLearn/data/ready.js lists the UI-language/learned-language pairs that have data.
 function learnAreaReady(code, area) {
   const ready = (window.LEARN_READY || {})[area];
   return Array.isArray(ready) && ready.includes(`${getStoredLang()}-${code}`);
@@ -14108,11 +15315,88 @@ if (page === "learn") {
     localStorage.setItem(LEARN_CHART_KEY, JSON.stringify(Array.from(selected)));
   }
 
+  function planAreaOf(ids) {
+    const counts = {};
+    ids.forEach((id) => {
+      const area = id.split("|")[1];
+      counts[area] = (counts[area] || 0) + 1;
+    });
+    const rank = { vocabulary: 3, sentence: 2, alphabet: 1 };
+    return Object.keys(counts).sort((a, b) => counts[b] - counts[a] || (rank[b] || 0) - (rank[a] || 0))[0];
+  }
+
+  function readySelected() {
+    return [...selected].filter((id) => {
+      const [code, area] = id.split("|");
+      return learnAreaReady(code, area);
+    });
+  }
+
+  // A plan loads every direction among the UI language and the selected languages, so the row count is
+  // the answer language's list once per direction.
+  function planRowEstimate(ids) {
+    const area = planAreaOf(ids);
+    const codes = [];
+    ids.forEach((id) => {
+      const [code, itemArea] = id.split("|");
+      if (itemArea === area && code && !codes.includes(code)) codes.push(code);
+    });
+    if (!codes.length) return 0;
+    const langs = [getStoredLang(), ...codes];
+    const counts = (window.LEARN_COUNTS || {})[area] || {};
+    let rows = 0;
+    langs.forEach((prompt) => {
+      langs.forEach((answer) => {
+        if (prompt !== answer) rows += counts[answer] || 0;
+      });
+    });
+    return rows;
+  }
+
+  function renderPlan() {
+    const list = document.getElementById("learn-plan-list");
+    const empty = document.getElementById("learn-plan-empty");
+    const start = document.getElementById("learn-plan-start");
+    const note = document.getElementById("learn-plan-note");
+    if (!list || !empty || !start || !note) return;
+    list.textContent = "";
+    const ids = readySelected();
+    empty.hidden = ids.length > 0;
+    start.hidden = ids.length === 0;
+    const areas = new Set(ids.map((id) => id.split("|")[1]));
+    const parts = [];
+    if (areas.size > 1) parts.push(formatTranslation("learn.planRuns", { area: getTranslation("learn." + planAreaOf(ids)) }));
+    if (ids.length && planRowEstimate(ids) >= LEARN_HEAVY_ROWS) parts.push(getTranslation("learn.planHeavy"));
+    note.hidden = !parts.length;
+    note.textContent = parts.join(" ");
+    ids.forEach((id) => {
+      const [code, area] = id.split("|");
+      const lang = learnLangs.find((item) => item.code === code);
+      const li = document.createElement("li");
+      li.className = "learn-plan-item";
+      const label = document.createElement("span");
+      label.textContent = (lang ? lang.name : code) + " · " + getTranslation("learn." + area);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "learn-plan-remove";
+      remove.textContent = "×";
+      remove.setAttribute("aria-label", label.textContent);
+      remove.addEventListener("click", () => {
+        selected.delete(id);
+        saveSelected();
+        paintCells();
+      });
+      li.append(label, remove);
+      list.appendChild(li);
+    });
+  }
+
   function paintCells() {
     cellLinks.forEach((btn) => {
       const id = btn.dataset.area;
       btn.classList.toggle("is-selected", selected.has(id));
     });
+    renderPlan();
   }
 
   function toggleSelected(ids) {
@@ -14162,8 +15446,8 @@ if (page === "learn") {
       nameBtn.className = "learn-chart-lang";
       nameBtn.textContent = name;
       nameBtn.dataset.rowLang = code;
-      // A box with content has a green ✓; one that still needs content has a red ✗, opens nothing and cannot
-      // be selected.
+      // A ready box shows learned % / golden %. One that still needs content has a red ✗, opens nothing
+      // and cannot be selected.
       const readyAreas = LEARN_AREAS.filter((area) => learnAreaReady(code, area));
       const rowIds = readyAreas.map((area) => areaId(code, area));
       nameBtn.addEventListener("click", () => toggleSelected(rowIds));
@@ -14177,13 +15461,28 @@ if (page === "learn") {
         cell.className = "learn-chart-cell";
         cell.dataset.area = areaId(code, area);
         const mark = document.createElement("span");
-        mark.className = "learn-chart-mark";
         mark.setAttribute("aria-hidden", "true");
-        mark.textContent = ready ? "✓" : "✗";
+        if (ready) {
+          const pct = learnPercents(code, area);
+          mark.className = "learn-chart-pcts";
+          const learned = document.createElement("span");
+          learned.className = "learn-chart-pct";
+          learned.textContent = (pct ? pct.learned : 0) + "%";
+          const golden = document.createElement("span");
+          golden.className = "learn-chart-pct is-golden";
+          golden.textContent = (pct ? pct.golden : 0) + "%";
+          mark.append(learned, document.createTextNode("/"), golden);
+        } else {
+          mark.className = "learn-chart-mark";
+          mark.textContent = "✗";
+        }
         cell.appendChild(mark);
         if (ready) {
-          cell.href = learnAreaHref(code, area);
-          cell.setAttribute("aria-label", name + " " + areaLabels[i]);
+          const pct = learnPercents(code, area);
+          cell.href = learnBrowseHref(code, area);
+          cell.setAttribute("aria-label", name + " " + areaLabels[i] + (pct
+            ? ", " + formatTranslation("learn.percentLabel", pct)
+            : ""));
           bindRightClickSelect(cell, [cell.dataset.area]);
           cellLinks.push(cell);
         } else {
@@ -14248,7 +15547,7 @@ if (page === "learn") {
     const [prefix, global] = AREA_DATA[area];
     const pair = `${getStoredLang()}-${code}`;
     const script = document.createElement("script");
-    script.src = `learn/data/${prefix}-${pair}.js?v=0.7`;
+    script.src = `NewLearn/data/${prefix}-${pair}.js?v=0.9`;
     script.onload = script.onerror = () => {
       const data = (window[global] || {})[pair];
       const seen = new Set();
@@ -14449,6 +15748,17 @@ if (page === "learn") {
     buildChart();
   };
 
+  const planStart = document.getElementById("learn-plan-start");
+  if (planStart) {
+    planStart.addEventListener("click", () => {
+      const ids = readySelected();
+      if (!ids.length) return;
+      const area = planAreaOf(ids);
+      const same = ids.filter((id) => id.endsWith("|" + area));
+      location.href = "learn-vocab.html?plan=" + encodeURIComponent(same.join(","));
+    });
+  }
+
   buildChart();
 }
 
@@ -14461,26 +15771,1086 @@ if (page === "learn-area") {
   const lang = params.get("lang");
   const area = params.get("area");
   const langButton = document.querySelector(`#lang-dropdown [data-lang="${CSS.escape(lang || "")}"]`);
-  if (!langButton || !LEARN_AREAS.includes(area)) location.replace("learn.html");
+  if (!langButton || !LEARN_AREAS.includes(area) || !learnAreaReady(lang, area)) {
+    location.replace("learn.html");
+  } else {
 
+  const STORE = area === "vocabulary" ? "vocab" : area === "sentence" ? "sentence" : "alphabet";
+  const PREFIX = area === "vocabulary" ? "vocab" : area === "sentence" ? "sentence" : "alphabet";
+  const GLOBAL = area === "vocabulary" ? "LEARN_VOCAB" : area === "sentence" ? "LEARN_SENTENCES" : "LEARN_ALPHABET";
+  const PAGE_SIZE = 60;
+  const SORTS = [
+    { id: "lesson", key: "kanji.sortLesson" },
+    { id: "personalBest", key: "kanji.sortPersonalBest" },
+    { id: "personalWorst", key: "kanji.sortPersonalWorst" },
+  ];
   const titleEl = document.getElementById("learn-area-title");
+  const grid = document.getElementById("learn-browse-grid");
+  const statusEl = document.getElementById("learn-browse-status");
+  const searchInput = document.getElementById("learn-browse-search");
+  const sortBtn = document.getElementById("learn-browse-sort");
+  const sortMenu = document.getElementById("learn-browse-sort-menu");
+  const starredBtn = document.getElementById("learn-browse-starred");
+  const learnLink = document.getElementById("learn-browse-learn");
+  const stateKey = "learnBrowseState";
+
+  function readJson(key, fallback) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key));
+      return value == null ? fallback : value;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  const savedState = readJson(stateKey, {})[lang + "|" + area] || {};
+  let sortId = SORTS.some((sort) => sort.id === savedState.sort) ? savedState.sort : "lesson";
+  let starredOnly = savedState.starredOnly === true;
+  const starred = new Set(readJson(STORE + "Starred", []));
+  const completed = new Set(readJson(STORE + "Completed", []));
+  const golden = new Set(readJson(STORE + "Golden", []));
+  const practiceStats = readJson(STORE + "PracticeStats", {});
+  const STORE_NAME = { alphabet: "alphabet", vocabulary: "vocab", sentence: "sentence" };
+  const statTables = {};
+  const goldenSets = {};
+  const starSets = {};
+  LEARN_AREAS.forEach((kind) => {
+    const store = STORE_NAME[kind];
+    statTables[kind] = kind === area ? practiceStats : readJson(store + "PracticeStats", {});
+    goldenSets[kind] = kind === area ? golden : new Set(readJson(store + "Golden", []));
+    starSets[kind] = kind === area ? starred : new Set(readJson(store + "Starred", []));
+  });
+  const byId = new Map();
+  const examples = new Map();
+  const vocabDict = new Map();
+  const EXAMPLE_LIMIT = 24;
+  const DETAIL_LIMIT = 12;
+  const PEEK_LIMIT = 6;
+  const UNSPACED = ["zh", "ja"];
+  const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+  const WORD_RUN = /[\p{L}\p{M}\p{N}]+(?:['’-][\p{L}\p{M}\p{N}]+)*/gu;
+  let examplesReady = false;
+  let vocabReady = area === "vocabulary";
+  let longestWord = 1;
+  let items = [];
+  let view = [];
+  let shown = 0;
+  let searchTimer = 0;
+
+  function saveState() {
+    const all = readJson(stateKey, {});
+    all[lang + "|" + area] = { sort: sortId, starredOnly };
+    localStorage.setItem(stateKey, JSON.stringify(all));
+  }
+
+  function saveStarred() {
+    localStorage.setItem(STORE + "Starred", JSON.stringify([...starred]));
+  }
 
   function renderTitle() {
     titleEl.textContent = learnAreaTitle(lang, area);
     document.title = titleEl.textContent + " - Kanji Builder";
   }
 
-  window.onLanguageChange = renderTitle;
+  function countsFor(key) {
+    const entry = practiceStats[key] || {};
+    return { correct: Number(entry.correct) || 0, wrong: Number(entry.wrong) || 0 };
+  }
 
-  if (langButton) renderTitle();
+  function countsOf(item) {
+    const entry = (statTables[item.kind] || {})[item.statKey] || {};
+    return { correct: Number(entry.correct) || 0, wrong: Number(entry.wrong) || 0 };
+  }
+
+  function accuracyOf(counts) {
+    const total = counts.correct + counts.wrong;
+    return total ? counts.correct / total : -1;
+  }
+
+  function filtered() {
+    const query = searchInput.value.trim().toLowerCase();
+    let list = items;
+    if (starredOnly) list = list.filter((item) => starred.has(item.statKey));
+    if (query) list = list.filter((item) => item.hay.includes(query));
+    if (sortId === "lesson") return list;
+    const best = sortId === "personalBest";
+    return list.slice().sort((a, b) => {
+      const ca = countsFor(a.statKey);
+      const cb = countsFor(b.statKey);
+      const pa = accuracyOf(ca);
+      const pb = accuracyOf(cb);
+      if ((pa < 0) !== (pb < 0)) return pa < 0 ? 1 : -1;
+      return (best ? pb - pa : pa - pb)
+        || (best ? cb.correct - ca.correct : cb.wrong - ca.wrong)
+        || (best ? ca.wrong - cb.wrong : ca.correct - cb.correct)
+        || a.order - b.order;
+    });
+  }
+
+  function paintBox(box, item) {
+    box.classList.toggle("is-completed", completed.has(item.statKey));
+    box.classList.toggle("is-golden", golden.has(item.statKey));
+    const on = starred.has(item.statKey);
+    const star = box.querySelector(".kanji-star");
+    star.textContent = on ? "★" : "☆";
+    star.classList.toggle("is-on", on);
+    star.setAttribute("aria-pressed", on ? "true" : "false");
+    const counts = countsOf(item);
+    const count = box.querySelector(".kanji-box-count");
+    count.children[0].textContent = "✓" + counts.correct;
+    count.children[1].textContent = "✗" + counts.wrong;
+    count.title = formatTranslation("kanji.countTitle", counts);
+  }
+
+  function buildBox(item) {
+    const box = document.createElement("div");
+    box.className = "symbol-box kanji-box learn-browse-box";
+    box.dataset.key = item.id;
+    const tag = document.createElement("span");
+    tag.className = "kanji-box-tag";
+    tag.textContent = String(item.lesson);
+    const star = document.createElement("button");
+    star.type = "button";
+    star.className = "kanji-star";
+    star.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (starred.has(item.statKey)) starred.delete(item.statKey);
+      else starred.add(item.statKey);
+      saveStarred();
+      paintBox(box, item);
+      if (detailItem === item) paintDetailStar();
+      if (starredOnly && !starred.has(item.statKey)) rebuild();
+    });
+    const glyph = document.createElement("div");
+    glyph.className = "kanji-box-glyph";
+    glyph.lang = lang;
+    glyph.textContent = item.text;
+    const label = document.createElement("div");
+    label.className = "kanji-box-label";
+    label.textContent = item.label;
+    const count = document.createElement("div");
+    count.className = "kanji-box-count";
+    count.append(document.createElement("span"), document.createElement("span"));
+    count.children[0].className = "is-correct";
+    count.children[1].className = "is-wrong";
+    box.append(tag, star, glyph, label, count);
+    box.title = item.label ? item.text + " — " + item.label : item.text;
+    paintBox(box, item);
+    box.addEventListener("click", (e) => {
+      if (e.target.closest(".kanji-star")) return;
+      openDetail(item);
+    });
+    return box;
+  }
+
+  function renderMore() {
+    const next = view.slice(shown, shown + PAGE_SIZE);
+    const sentinel = grid.querySelector(".learn-browse-more");
+    if (sentinel) sentinel.remove();
+    next.forEach((item) => grid.appendChild(buildBox(item)));
+    shown += next.length;
+    statusEl.textContent = view.length ? shown + " / " + view.length : "";
+    if (shown < view.length) {
+      const more = document.createElement("div");
+      more.className = "learn-browse-more";
+      grid.appendChild(more);
+      observer.observe(more);
+    }
+  }
+
+  function rebuild() {
+    observer.disconnect();
+    grid.textContent = "";
+    view = filtered();
+    shown = 0;
+    if (!view.length) {
+      statusEl.textContent = getTranslation(starredOnly ? "learn.browseNoStarred" : "kanji.noMatches");
+      return;
+    }
+    renderMore();
+  }
+
+  const observer = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) renderMore();
+  }, { rootMargin: "600px" });
+
+  function sortLabel(id) {
+    const sort = SORTS.find((item) => item.id === id) || SORTS[0];
+    return getTranslation(sort.key);
+  }
+
+  function syncBrowseSort() {
+    sortBtn.textContent = sortLabel(sortId);
+    sortMenu.querySelectorAll(".kanji-sort-option").forEach((opt) => {
+      opt.setAttribute("aria-checked", opt.dataset.sort === sortId ? "true" : "false");
+    });
+  }
+
+  function closeBrowseSort() {
+    sortMenu.classList.add("hidden");
+    sortBtn.setAttribute("aria-expanded", "false");
+  }
+
+  SORTS.forEach((sort) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "kanji-sort-option";
+    option.setAttribute("role", "menuitemradio");
+    option.dataset.sort = sort.id;
+    option.textContent = getTranslation(sort.key);
+    sortMenu.appendChild(option);
+  });
+  syncBrowseSort();
+  starredBtn.classList.toggle("is-active", starredOnly);
+  starredBtn.setAttribute("aria-pressed", starredOnly ? "true" : "false");
+  learnLink.href = learnAreaHref(lang, area);
+  if (area === "sentence") grid.classList.add("is-sentence");
+  renderTitle();
+  window.onLanguageChange = () => location.reload();
+
+  sortBtn.addEventListener("click", () => {
+    const open = sortMenu.classList.contains("hidden");
+    sortMenu.classList.toggle("hidden", !open);
+    sortBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) {
+      const current = sortMenu.querySelector('[aria-checked="true"]');
+      if (current) current.focus();
+    }
+  });
+  sortMenu.addEventListener("click", (e) => {
+    const option = e.target.closest(".kanji-sort-option");
+    if (!option) return;
+    sortId = option.dataset.sort;
+    syncBrowseSort();
+    closeBrowseSort();
+    saveState();
+    rebuild();
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".kanji-sort-wrap")) closeBrowseSort();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeBrowseSort();
+  });
+  starredBtn.addEventListener("click", () => {
+    starredOnly = !starredOnly;
+    starredBtn.classList.toggle("is-active", starredOnly);
+    starredBtn.setAttribute("aria-pressed", starredOnly ? "true" : "false");
+    saveState();
+    rebuild();
+  });
+  searchInput.addEventListener("input", () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(rebuild, 200);
+  });
+
+  function takeItems(data) {
+    const seen = new Set();
+    const list = [];
+    let lesson = 0;
+    data.forEach(([, rows]) => {
+      lesson += 1;
+      rows.forEach((row) => {
+        const [word, reading, meaningText] = String(row).split("\t");
+        if (!word || seen.has(word)) return;
+        seen.add(word);
+        const edited = aficLearnOverride(area, getStoredLang(), lang, word);
+        const shown = aficLearnWordOverride(area, getStoredLang(), lang, word) || word;
+        const label = edited || String(meaningText || "").trim();
+        const item = {
+          id: area + "|" + lang + "|" + word,
+          kind: area,
+          statKey: lang + "|" + word,
+          text: shown,
+          sourceText: word,
+          label,
+          reading: reading || "",
+          lesson,
+          order: list.length,
+          hay: (shown + " " + word + " " + label + " " + (reading || "")).toLowerCase(),
+        };
+        byId.set(item.id, item);
+        list.push(item);
+      });
+    });
+    return list;
+  }
+
+  function plainTerm(text) {
+    let plain = String(text || "").normalize("NFKC").toLowerCase();
+    if (UNSPACED.includes(lang) || lang === "ko") plain = plain.replace(/\s+/g, "");
+    else plain = plain.replace(/[^\p{L}\p{N}]+/gu, "");
+    return plain;
+  }
+
+  function remember(kind, text, label, lesson, reading) {
+    const edited = aficLearnOverride(kind, getStoredLang(), lang, text);
+    const shown = aficLearnWordOverride(kind, getStoredLang(), lang, text) || text;
+    if (edited) label = edited;
+    const id = kind + "|" + lang + "|" + text;
+    let item = byId.get(id);
+    if (item) {
+      item.text = shown;
+      item.sourceText = text;
+      if (label) item.label = label;
+      if (!item.reading && reading) item.reading = reading;
+      return item;
+    }
+    item = {
+      id,
+      kind,
+      statKey: lang + "|" + text,
+      text: shown,
+      sourceText: text,
+      label: label || "",
+      reading: reading || "",
+      lesson: lesson || 0,
+      order: 0,
+      hay: "",
+    };
+    byId.set(id, item);
+    return item;
+  }
+
+  function addExample(host, related) {
+    if (!host || !related || host.id === related.id) return;
+    let list = examples.get(host.id);
+    if (!list) {
+      list = [];
+      examples.set(host.id, list);
+    }
+    if (list.length >= EXAMPLE_LIMIT || list.includes(related)) return;
+    list.push(related);
+  }
+
+  function indexWord(item) {
+    const plain = plainTerm(item.text);
+    if (!plain || vocabDict.has(plain)) return;
+    vocabDict.set(plain, item);
+    if (plain.length > longestWord) longestWord = Math.min(16, plain.length);
+  }
+
+  function tokensOf(text) {
+    const tokens = [];
+    WORD_RUN.lastIndex = 0;
+    for (const match of String(text || "").matchAll(WORD_RUN)) {
+      const run = match[0];
+      if (!UNSPACED.includes(lang) || !CJK.test(run)) {
+        tokens.push(run);
+        continue;
+      }
+      for (let i = 0; i < run.length;) {
+        let size = Math.min(longestWord, run.length - i);
+        while (size > 1 && !vocabDict.has(plainTerm(run.slice(i, i + size)))) size -= 1;
+        tokens.push(run.slice(i, i + size));
+        i += size;
+      }
+    }
+    return tokens;
+  }
+
+  let letterIndex = new Map();
+  let maxLetter = 1;
+  const letterStarts = new Map();
+  const letterRest = new Map();
+
+  function pushCapped(map, id, item) {
+    let list = map.get(id);
+    if (!list) {
+      list = [];
+      map.set(id, list);
+    }
+    if (list.length >= EXAMPLE_LIMIT || list.includes(item)) return;
+    list.push(item);
+  }
+
+  function attachWordToLetters(wordItem) {
+    const text = wordItem.text;
+    const seen = new Set();
+    for (let i = 0; i < text.length; i++) {
+      const room = Math.min(maxLetter, text.length - i);
+      for (let size = room; size >= 1; size--) {
+        const plain = plainTerm(text.slice(i, i + size));
+        const letter = plain && letterIndex.get(plain);
+        if (!letter || seen.has(letter.id)) continue;
+        seen.add(letter.id);
+        pushCapped(i === 0 ? letterStarts : letterRest, letter.id, wordItem);
+        break;
+      }
+    }
+  }
+
+  function mergeLetterExamples() {
+    letterIndex.forEach((letter) => {
+      const list = (letterStarts.get(letter.id) || []).slice();
+      (letterRest.get(letter.id) || []).forEach((item) => {
+        if (list.length >= EXAMPLE_LIMIT || list.includes(item)) return;
+        list.push(item);
+      });
+      if (list.length) examples.set(letter.id, list);
+    });
+  }
+
+  function attachSentence(sentenceItem) {
+    const seen = new Set();
+    tokensOf(sentenceItem.text).forEach((token) => {
+      const word = vocabDict.get(plainTerm(token));
+      if (!word || seen.has(word.id)) return;
+      seen.add(word.id);
+      addExample(word, sentenceItem);
+    });
+  }
+
+  function walkRows(data, onRow, done) {
+    let lesson = 0;
+    let row = 0;
+    const step = () => {
+      const end = performance.now() + 12;
+      while (performance.now() < end && data && lesson < data.length) {
+        const rows = data[lesson][1] || [];
+        if (row >= rows.length) {
+          lesson += 1;
+          row = 0;
+          continue;
+        }
+        onRow(rows[row], lesson + 1);
+        row += 1;
+      }
+      if (data && lesson < data.length) setTimeout(step, 0);
+      else done();
+    };
+    step();
+  }
+
+  function walkList(list, onItem, done) {
+    let index = 0;
+    const step = () => {
+      const end = performance.now() + 12;
+      while (performance.now() < end && index < list.length) onItem(list[index++]);
+      if (index < list.length) setTimeout(step, 0);
+      else done();
+    };
+    step();
+  }
+
+  function loadScript(prefix, pairName) {
+    const globalName = prefix === "vocab" ? "LEARN_VOCAB" : "LEARN_SENTENCES";
+    return new Promise((resolve) => {
+      const ready = () => (window[globalName] || {})[pairName];
+      if (ready()) {
+        resolve(ready());
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = `NewLearn/data/${prefix}-${pairName}.js?v=0.9`;
+      script.onload = () => resolve(ready() || null);
+      script.onerror = () => resolve(null);
+      document.head.appendChild(script);
+    });
+  }
+
+  function node(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text != null) el.textContent = text;
+    return el;
+  }
+
+  function makeChip(item, interactive) {
+    const chip = node(interactive ? "button" : "div", "kanji-part-chip");
+    if (interactive) {
+      chip.type = "button";
+      chip.dataset.key = item.id;
+    }
+    const glyph = node("span", "kanji-part-glyph", item.text);
+    glyph.lang = lang;
+    chip.append(glyph);
+    if (item.label) chip.append(node("span", "kanji-part-name", item.label));
+    return chip;
+  }
+
+  let detailEditing = false;
+
+  function buildDetail(item, compact) {
+    const root = node("div", "kanji-detail-content");
+    const head = node("div", "kanji-detail-head");
+    const glyph = node("div", "kanji-detail-glyph", item.text);
+    glyph.lang = lang;
+    if (item.kind === "sentence" || item.text.length > 8) glyph.classList.add("is-long");
+    if (!compact) glyph.id = "kanji-detail-glyph";
+    const canEditItem = !compact && detailEditing && aficCanEditPair(getStoredLang(), lang);
+    const sourceWord = item.sourceText || item.text;
+    const commitLearn = (wordAfter, meaningAfter) => {
+      saveLearnSides(item.kind, getStoredLang(), lang, sourceWord, item.text, item.label, wordAfter, meaningAfter);
+      item.text = aficClean(wordAfter) || item.text;
+      item.label = aficClean(meaningAfter);
+      const box = grid.querySelector('.learn-browse-box[data-key="' + CSS.escape(item.id) + '"]');
+      if (box) {
+        const glyphEl = box.querySelector(".kanji-box-glyph");
+        const labelEl = box.querySelector(".kanji-box-label");
+        if (glyphEl) glyphEl.textContent = item.text;
+        if (labelEl) labelEl.textContent = item.label;
+        box.title = item.label ? item.text + " — " + item.label : item.text;
+      }
+      showDetail(item);
+    };
+    if (canEditItem) {
+      glyph.classList.add("afic-edit-line");
+      glyph.title = "Click to edit";
+      glyph.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (glyph.querySelector("input, textarea")) return;
+        aficReplaceWithInput(glyph, item.text, (next) => {
+          if (next == null || aficClean(next) === aficClean(item.text)) showDetail(item);
+          else commitLearn(next, item.label);
+        }, item.kind === "sentence" || String(item.text || "").length > 40);
+      });
+    }
+    const titles = node("div", "kanji-detail-titles");
+    if (item.label || canEditItem) {
+      const meaning = node("div", "kanji-detail-meaning", item.label || "");
+      if (canEditItem) {
+        meaning.classList.add("afic-edit-line");
+        meaning.title = "Click to edit";
+        meaning.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (meaning.querySelector("input, textarea")) return;
+          aficReplaceWithInput(meaning, item.label || "", (next) => {
+            if (next == null || aficClean(next) === aficClean(item.label || "")) showDetail(item);
+            else commitLearn(item.text, next);
+          }, item.kind === "sentence" || String(item.label || "").length > 40);
+        });
+      }
+      titles.append(meaning);
+    }
+    if (item.reading) titles.append(node("div", "kanji-detail-facts", item.reading));
+    if (item.lesson) titles.append(node("div", "kanji-detail-facts", formatTranslation("kanji.learnLesson", { n: item.lesson })));
+    const counts = countsOf(item);
+    const count = node("div", "kanji-box-count kanji-detail-count");
+    if (goldenSets[item.kind] && goldenSets[item.kind].has(item.statKey)) {
+      count.append(node("span", "is-golden", getTranslation("kanji.golden")));
+    }
+    count.append(node("span", "is-correct", "✓" + counts.correct), node("span", "is-wrong", "✗" + counts.wrong));
+    count.title = formatTranslation("kanji.countTitle", counts);
+    titles.append(count);
+    head.append(glyph, titles);
+    root.append(head);
+
+    const title = item.kind === "sentence"
+      ? getTranslation("kanji.breakdown")
+      : item.kind === "alphabet"
+        ? getTranslation("learn.exampleWords")
+        : getTranslation("learn.exampleSentences");
+    const section = node("section", "kanji-detail-section");
+    section.append(node("h3", "", title));
+    const waiting = item.kind === "vocabulary" ? !examplesReady : !vocabReady;
+    if (waiting) {
+      section.append(node("p", "kanji-detail-none", getTranslation("learn.examplesLoading")));
+    } else if (item.kind === "sentence") {
+      const tokens = tokensOf(item.text);
+      if (!tokens.length) section.append(node("p", "kanji-detail-none", getTranslation("kanji.noBreakdown")));
+      else {
+        const row = node("div", "kanji-part-row");
+        tokens.forEach((token) => {
+          const word = vocabDict.get(plainTerm(token));
+          row.append(word ? makeChip(word, !compact) : makeChip({ text: token, label: "" }, false));
+        });
+        section.append(row);
+      }
+    } else {
+      const list = examples.get(item.id) || [];
+      if (!list.length) section.append(node("p", "kanji-detail-none", getTranslation("learn.noExamples")));
+      else {
+        const limit = compact ? PEEK_LIMIT : DETAIL_LIMIT;
+        const row = node("div", "kanji-part-row learn-example-row" + (item.kind === "vocabulary" ? " is-sentence" : ""));
+        list.slice(0, limit).forEach((related) => row.append(makeChip(related, !compact)));
+        section.append(row);
+        if (list.length > limit) {
+          if (compact) {
+            row.append(node("span", "kanji-detail-more", formatTranslation("kanji.more", { count: list.length - limit })));
+          } else {
+            const showAll = node("button", "transfer-lang-chip kanji-detail-show-all", formatTranslation("kanji.showAll", { count: list.length }));
+            showAll.type = "button";
+            showAll.addEventListener("click", () => {
+              showAll.remove();
+              list.slice(limit).forEach((related) => row.append(makeChip(related, true)));
+            });
+            section.append(showAll);
+          }
+        }
+      }
+    }
+    root.append(section);
+    return root;
+  }
+
+  const detailModal = document.getElementById("kanji-detail-modal");
+  const detailBody = document.getElementById("kanji-detail-body");
+  const detailBack = document.getElementById("kanji-detail-back");
+  const detailClose = document.getElementById("kanji-detail-close");
+  const detailEdit = document.getElementById("kanji-detail-edit");
+  const detailStar = document.getElementById("kanji-detail-star");
+  const detailPrev = document.getElementById("kanji-detail-prev");
+  const detailNext = document.getElementById("kanji-detail-next");
+  const detailPosition = document.getElementById("kanji-detail-position");
+  const detailPrevGlyph = document.getElementById("kanji-detail-prev-glyph");
+  const detailNextGlyph = document.getElementById("kanji-detail-next-glyph");
+  const peekCard = document.getElementById("kanji-peek");
+  let detailItem = null;
+  let detailStarChanged = false;
+  const detailHistory = [];
+  let detailList = [];
+  let detailListPos = new Map();
+  let detailListIndex = -1;
+
+  function syncArrow(button, glyphEl, labelKey, item) {
+    const label = getTranslation(labelKey);
+    button.disabled = !item;
+    glyphEl.textContent = item ? item.text : "";
+    glyphEl.lang = lang;
+    if (item) button.dataset.key = item.id;
+    else delete button.dataset.key;
+    button.title = item ? label + ": " + item.text : label;
+    button.setAttribute("aria-label", button.title);
+  }
+
+  function detailNeighbor(offset) {
+    const total = detailList.length;
+    if (detailListIndex < 0 || total < 2) return null;
+    return detailList[(detailListIndex + offset + total) % total];
+  }
+
+  function syncDetailNav() {
+    syncArrow(detailPrev, detailPrevGlyph, "kanji.previous", detailNeighbor(-1));
+    syncArrow(detailNext, detailNextGlyph, "kanji.next", detailNeighbor(1));
+    detailPosition.textContent = detailList.length && detailListIndex >= 0 ? (detailListIndex + 1) + " / " + detailList.length : "";
+  }
+
+  function paintDetailStar() {
+    if (!detailItem || !detailStar) return;
+    const on = starSets[detailItem.kind].has(detailItem.statKey);
+    detailStar.textContent = on ? "★" : "☆";
+    detailStar.classList.toggle("is-on", on);
+    detailStar.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+
+  function showDetail(item) {
+    detailItem = item;
+    const listIndex = detailListPos.get(item.id);
+    if (listIndex !== undefined) detailListIndex = listIndex;
+    detailBody.textContent = "";
+    detailBody.append(buildDetail(item, false));
+    paintDetailStar();
+    if (detailEdit) {
+      const canEdit = aficCanEditPair(getStoredLang(), lang);
+      detailEdit.classList.toggle("hidden", !canEdit);
+      detailEdit.classList.toggle("is-active", canEdit && detailEditing);
+      detailEdit.title = canEdit && detailEditing ? "Left-click the word or translation to edit it" : "Edit";
+    }
+    detailBack.classList.toggle("hidden", !detailHistory.length);
+    syncDetailNav();
+    detailBody.scrollTop = 0;
+  }
+
+  function openDetail(item) {
+    detailHistory.length = 0;
+    detailStarChanged = false;
+    detailList = view.slice();
+    detailListPos = new Map(detailList.map((listItem, index) => [listItem.id, index]));
+    detailListIndex = -1;
+    showDetail(item);
+    detailModal.classList.remove("hidden");
+    detailClose.focus();
+  }
+
+  function goToDetail(id) {
+    const item = byId.get(id);
+    if (!item || item === detailItem) return;
+    detailHistory.push(detailItem);
+    showDetail(item);
+  }
+
+  function closeDetail() {
+    if (!detailModal || detailModal.classList.contains("hidden")) return;
+    detailModal.classList.add("hidden");
+    detailItem = null;
+    detailEditing = false;
+    detailHistory.length = 0;
+    detailList = [];
+    detailListPos = new Map();
+    if (detailStarChanged && starredOnly) rebuild();
+  }
+
+  if (detailEdit) {
+    detailEdit.addEventListener("click", () => {
+      if (!detailItem || !aficCanEditPair(getStoredLang(), lang)) return;
+      detailEditing = !detailEditing;
+      showDetail(detailItem);
+    });
+  }
+  document.addEventListener("adminmodechange", () => {
+    if (detailItem) showDetail(detailItem);
+  });
+
+  detailBack.addEventListener("click", () => {
+    const previous = detailHistory.pop();
+    if (previous) showDetail(previous);
+  });
+  detailClose.addEventListener("click", closeDetail);
+  detailPrev.addEventListener("click", () => {
+    const item = detailNeighbor(-1);
+    if (!item) return;
+    detailHistory.length = 0;
+    showDetail(item);
+  });
+  detailNext.addEventListener("click", () => {
+    const item = detailNeighbor(1);
+    if (!item) return;
+    detailHistory.length = 0;
+    showDetail(item);
+  });
+  detailStar.addEventListener("click", () => {
+    if (!detailItem) return;
+    const set = starSets[detailItem.kind];
+    if (set.has(detailItem.statKey)) set.delete(detailItem.statKey);
+    else set.add(detailItem.statKey);
+    localStorage.setItem(STORE_NAME[detailItem.kind] + "Starred", JSON.stringify([...set]));
+    paintDetailStar();
+    if (detailItem.kind === area) {
+      const box = grid.querySelector('.learn-browse-box[data-key="' + CSS.escape(detailItem.id) + '"]');
+      if (box) paintBox(box, detailItem);
+      detailStarChanged = true;
+    }
+  });
+  detailModal.addEventListener("click", (e) => {
+    if (e.target === detailModal) {
+      closeDetail();
+      return;
+    }
+    const target = e.target.closest(".kanji-detail-content [data-key]");
+    if (target) goToDetail(target.dataset.key);
+  });
+
+  let peeking = false;
+  let peekId = null;
+  let peekBox = null;
+  let suppressContextMenu = false;
+  const PEEK_GAP = 6;
+  const PEEK_MARGIN = 8;
+  const PEEK_TARGETS = ".learn-browse-grid .kanji-box, .kanji-detail-content [data-key], .kanji-detail-arrow[data-key]";
+
+  function peekTargetOf(target) {
+    return target && target.closest ? target.closest(PEEK_TARGETS) : null;
+  }
+
+  function placePeek() {
+    if (!peekBox || !peekBox.isConnected) return;
+    const rect = peekBox.getBoundingClientRect();
+    const viewWidth = document.documentElement.clientWidth;
+    const viewHeight = window.innerHeight;
+    peekCard.style.maxHeight = "none";
+    const naturalHeight = peekCard.offsetHeight;
+    const width = peekCard.offsetWidth;
+    const spaceBelow = viewHeight - rect.bottom - PEEK_GAP - PEEK_MARGIN;
+    const spaceAbove = rect.top - PEEK_GAP - PEEK_MARGIN;
+    const below = naturalHeight <= spaceBelow || spaceBelow >= spaceAbove;
+    const height = Math.max(0, Math.min(naturalHeight, below ? spaceBelow : spaceAbove));
+    const top = below ? rect.bottom + PEEK_GAP : rect.top - PEEK_GAP - height;
+    const centered = rect.left + rect.width / 2 - width / 2;
+    const left = Math.min(Math.max(PEEK_MARGIN, centered), viewWidth - width - PEEK_MARGIN);
+    peekCard.style.maxHeight = height + "px";
+    peekCard.style.top = top + "px";
+    peekCard.style.left = Math.max(PEEK_MARGIN, left) + "px";
+    peekCard.classList.toggle("is-above", !below);
+  }
+
+  function showPeek(box) {
+    const item = byId.get(box.dataset.key);
+    if (!item) return;
+    if (item.id !== peekId) {
+      peekId = item.id;
+      peekCard.textContent = "";
+      peekCard.append(buildDetail(item, true));
+    } else if (box === peekBox && !peekCard.classList.contains("hidden")) {
+      return;
+    }
+    if (peekBox) peekBox.classList.remove("is-peeked");
+    peekBox = box;
+    peekBox.classList.add("is-peeked");
+    peekCard.classList.remove("hidden");
+    placePeek();
+  }
+
+  function endPeek() {
+    if (!peeking) return;
+    peeking = false;
+    peekId = null;
+    if (peekBox) peekBox.classList.remove("is-peeked");
+    peekBox = null;
+    peekCard.classList.add("hidden");
+    document.body.classList.remove("kanji-peeking");
+  }
+
+  document.addEventListener("mousedown", (e) => {
+    if (e.button !== 2) return;
+    const box = peekTargetOf(e.target);
+    if (!box) return;
+    e.preventDefault();
+    peeking = true;
+    suppressContextMenu = true;
+    document.body.classList.add("kanji-peeking");
+    showPeek(box);
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!peeking) return;
+    if (!(e.buttons & 2)) {
+      endPeek();
+      return;
+    }
+    const box = peekTargetOf(e.target);
+    if (box) showPeek(box);
+  });
+  document.addEventListener("mouseup", (e) => {
+    if (e.button === 2) endPeek();
+  });
+  document.addEventListener("contextmenu", (e) => {
+    if (suppressContextMenu || peekTargetOf(e.target)) {
+      e.preventDefault();
+      suppressContextMenu = false;
+    }
+  });
+  document.addEventListener("scroll", () => {
+    if (peeking) placePeek();
+  }, { passive: true, capture: true });
+  window.addEventListener("resize", () => {
+    if (peeking) placePeek();
+  });
+  window.addEventListener("blur", endPeek);
+
+  function refreshOpen() {
+    if (detailItem && detailModal && !detailModal.classList.contains("hidden")) showDetail(detailItem);
+  }
+
+  function loadRelated() {
+    const pairName = getStoredLang() + "-" + lang;
+    if (area === "vocabulary") items.forEach(indexWord);
+    if (area === "alphabet") {
+      letterIndex = new Map();
+      maxLetter = 1;
+      items.forEach((item) => {
+        const plain = plainTerm(item.text);
+        if (!plain || plain.length > 8 || letterIndex.has(plain)) return;
+        letterIndex.set(plain, item);
+        if (plain.length > maxLetter) maxLetter = plain.length;
+      });
+    }
+    const vocabJob = area === "vocabulary"
+      ? Promise.resolve()
+      : loadScript("vocab", pairName).then((data) => new Promise((resolve) => {
+        walkRows(data, (row, lesson) => {
+          const [word, reading, meaningText] = String(row).split("\t");
+          if (!word) return;
+          const item = remember("vocabulary", word, String(meaningText || "").trim(), lesson, reading || "");
+          indexWord(item);
+          if (area === "alphabet") attachWordToLetters(item);
+        }, resolve);
+      }));
+    vocabJob.then(() => {
+      vocabReady = true;
+      if (area === "alphabet") mergeLetterExamples();
+      refreshOpen();
+      if (area === "sentence") {
+        walkList(items, attachSentence, () => {
+          examplesReady = true;
+          refreshOpen();
+        });
+        return;
+      }
+      loadScript("sentence", pairName).then((data) => {
+        walkRows(data, (row, lesson) => {
+          const [text, reading, meaningText] = String(row).split("\t");
+          if (!text) return;
+          const item = remember("sentence", text, String(meaningText || "").trim(), lesson, reading || "");
+          attachSentence(item);
+        }, () => {
+          examplesReady = true;
+          refreshOpen();
+        });
+      });
+    });
+  }
+
+  statusEl.textContent = getTranslation("learn.planLoading");
+  const pair = getStoredLang() + "-" + lang;
+  const readyData = () => (window[GLOBAL] || {})[pair];
+  function start(data) {
+    items = Array.isArray(data) ? takeItems(data) : [];
+    rebuild();
+    if (!items.length) {
+      statusEl.textContent = getTranslation(area === "sentence" ? "learn.noSentences" : area === "alphabet" ? "learn.noAlphabet" : "learn.noVocab");
+      return;
+    }
+    loadRelated();
+  }
+  if (readyData()) start(readyData());
+  else {
+    const script = document.createElement("script");
+    script.src = `NewLearn/data/${PREFIX}-${pair}.js?v=0.9`;
+    script.onload = () => start(readyData());
+    script.onerror = () => start(null);
+    document.head.appendChild(script);
+  }
+  }
+}
+
+/* O/X answers can be pressed instead of clicked. Defaults: O Enter, X Space, then J K L ; ' for the five choices. */
+const OX_KEYBIND_STORAGE = "kanjiBuilderOxKeybinds";
+const OX_KEYBIND_IDS = ["o", "x", "x1", "x2", "x3", "x4", "x5"];
+const OX_KEYBIND_LABELS = { o: "O", x: "X", x1: "X1", x2: "X2", x3: "X3", x4: "X4", x5: "X5" };
+const OX_KEYBIND_DEFAULTS = {
+  o: "Enter",
+  x: "Space",
+  x1: "KeyJ",
+  x2: "KeyK",
+  x3: "KeyL",
+  x4: "Semicolon",
+  x5: "Quote",
+};
+const OX_KEYBIND_SYMBOLS = {
+  Semicolon: ";",
+  Quote: "'",
+  Backquote: "`",
+  Backslash: "\\",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+  Minus: "-",
+  Equal: "=",
+};
+let oxKeybindListening = false;
+let oxBindClickGuard = false;
+
+function readOxKeybinds() {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(OX_KEYBIND_STORAGE) || "{}");
+  } catch (e) {
+    saved = {};
+  }
+  if (!saved || typeof saved !== "object") saved = {};
+  const binds = {};
+  OX_KEYBIND_IDS.forEach((id) => {
+    binds[id] = Object.prototype.hasOwnProperty.call(saved, id) ? String(saved[id] || "") : OX_KEYBIND_DEFAULTS[id];
+  });
+  return binds;
+}
+
+function writeOxKeybinds(binds) {
+  const stored = {};
+  OX_KEYBIND_IDS.forEach((id) => {
+    stored[id] = binds[id] || "";
+  });
+  localStorage.setItem(OX_KEYBIND_STORAGE, JSON.stringify(stored));
+}
+
+function oxKeybindDisplay(code) {
+  if (!code) return getTranslation("learn.oxKeybindBlank");
+  if (code === "Enter" || code === "NumpadEnter") return getTranslation("learn.oxKeybindEnter");
+  if (code === "Space") return getTranslation("learn.oxKeybindSpace");
+  if (code.startsWith("Key") && code.length === 4) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  if (/^Numpad\d$/.test(code)) return code.slice(6);
+  if (code.startsWith("Mouse")) {
+    const names = {
+      0: "learn.oxMouseLeft",
+      1: "learn.oxMouseMiddle",
+      2: "learn.oxMouseRight",
+      3: "learn.oxMouseBack",
+      4: "learn.oxMouseForward",
+    };
+    const key = names[code.slice(5)];
+    return key ? getTranslation(key) : code;
+  }
+  if (OX_KEYBIND_SYMBOLS[code]) return OX_KEYBIND_SYMBOLS[code];
+  const words = {
+    Tab: "Tab",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Escape: "Esc",
+    CapsLock: "Caps Lock",
+    ShiftLeft: "Shift",
+    ShiftRight: "Shift",
+    ControlLeft: "Ctrl",
+    ControlRight: "Ctrl",
+    AltLeft: "Alt",
+    AltRight: "Alt",
+    MetaLeft: "Win",
+    MetaRight: "Win",
+    ArrowUp: "↑",
+    ArrowDown: "↓",
+    ArrowLeft: "←",
+    ArrowRight: "→",
+    Home: "Home",
+    End: "End",
+    PageUp: "Page Up",
+    PageDown: "Page Down",
+  };
+  return words[code] || code;
+}
+
+function oxKeybindHint(id) {
+  const code = readOxKeybinds()[id];
+  return code ? oxKeybindDisplay(code) : "";
+}
+
+function appendOxHint(button, id) {
+  const text = oxKeybindHint(id);
+  if (!text) return;
+  const mark = document.createElement("span");
+  mark.className = "ox-key-hint";
+  mark.textContent = text;
+  button.append(mark);
+}
+
+function oxKeybindAction(code) {
+  if (!code) return "";
+  const binds = readOxKeybinds();
+  return OX_KEYBIND_IDS.find((id) => binds[id] === code) || "";
+}
+
+function oxKeybindDialogOpen() {
+  const dialog = document.getElementById("vocab-ox-keybind-dialog");
+  return !!(dialog && !dialog.classList.contains("hidden"));
+}
+
+function oxKeybindPhaseAction(round, action) {
+  if (!round || round.answered || round.card.mode !== "definition" || !action) return null;
+  if (round.phase === 1 && (action === "o" || action === "x")) return { kind: "judge", choice: action };
+  if (round.phase !== 2) return null;
+  const index = { x1: 0, x2: 1, x3: 2, x4: 3, x5: 4 }[action];
+  if (index == null || !round.options[index]) return null;
+  return { kind: "pick", text: round.options[index].label };
+}
+
+function runOxKeybind(event, code, round, judgeFn, pickFn) {
+  if (oxKeybindListening || oxKeybindDialogOpen()) return false;
+  const hit = oxKeybindPhaseAction(round, oxKeybindAction(code));
+  if (!hit) return false;
+  event.preventDefault();
+  if (event.type === "mousedown") oxBindClickGuard = true;
+  if (hit.kind === "judge") judgeFn(hit.choice);
+  else pickFn(hit.text);
+  return true;
 }
 
 /* --------------------------------
    LEARN ALPHABET / VOCABULARY / SENTENCE PAGE
    learn-vocab.html?lang=de (vocabulary), learn-vocab.html?lang=de&area=sentence or &area=alphabet: one
    language's words, sentences or letters, taught in the UI language. The curriculum comes from
-   learn/data/vocab-<ui>-<lang>.js, sentence-<ui>-<lang>.js or alphabet-<ui>-<lang>.js (built by
-   learn/tools/kb_build_learn_js.ps1 from learn/Vocabulary, learn/Sentences and learn/Alphabet), loaded when
+   NewLearn/data/vocab-<ui>-<lang>.js, sentence-<ui>-<lang>.js or alphabet-<ui>-<lang>.js (built by
+   NewLearn/tools/kb_build_learn_data.mjs from NewLearn/Vocabulary, NewLearn/Sentences and the copied alphabet), loaded when
    the page opens. It plays like Kanji Learn: Linear goes through the curriculum's lessons, Exponential runs
    every word in one line. Words (sentences, letters) are keyed "<lang>|<text>"; the vocab* (sentence*,
    alphabet*) keys hold their counts, learned outlines and Golden marks the way the kanji keys do for symbols.
@@ -14488,8 +16858,18 @@ if (page === "learn-area") {
 -------------------------------- */
 if (page === "learn-vocab") {
   const params = new URLSearchParams(location.search);
-  const sentences = params.get("area") === "sentence";
-  const alphabet = params.get("area") === "alphabet";
+  const planCodes = [];
+  let planArea = "";
+  (params.get("plan") || "").split(",").forEach((part) => {
+    const [code, itemArea] = part.split("|");
+    if (!code || !LEARN_AREAS.includes(itemArea)) return;
+    if (!document.querySelector(`#lang-dropdown [data-lang="${CSS.escape(code)}"]`)) return;
+    if (code === getStoredLang()) return;
+    if (!planArea) planArea = itemArea;
+    if (itemArea === planArea && !planCodes.includes(code)) planCodes.push(code);
+  });
+  const sentences = (planArea || params.get("area")) === "sentence";
+  const alphabet = (planArea || params.get("area")) === "alphabet";
   const area = sentences ? "sentence" : alphabet ? "alphabet" : "vocabulary";
   const STORE = sentences ? "sentence" : alphabet ? "alphabet" : "vocab";
   const VOCAB_SETTINGS_KEY = `${STORE}LearnSettings`;
@@ -14498,6 +16878,7 @@ if (page === "learn-vocab") {
   const VOCAB_STATS_KEY = `${STORE}PracticeStats`;
   const VOCAB_COMPLETED_KEY = `${STORE}Completed`;
   const VOCAB_GOLDEN_KEY = `${STORE}Golden`;
+  const VOCAB_STARRED_KEY = `${STORE}Starred`;
   const VOCAB_RECENT_KEY = `${STORE}RecentAnswers`;
   const VOCAB_EXP_KEY = `${STORE}LearnExponential`;
   const TEXT = sentences
@@ -14547,12 +16928,13 @@ if (page === "learn-vocab") {
   const PEEK_GAP = 8;
   const PEEK_MARGIN = 8;
 
-  const lang = params.get("lang") || "";
+  const lang = planCodes[0] || params.get("lang") || "";
   if (!document.querySelector(`#lang-dropdown [data-lang="${CSS.escape(lang)}"]`)) location.replace("learn.html");
-  const pair = `${getStoredLang()}-${lang}`;
+  const pair = planCodes.length ? `plan-${planCodes.join("-")}` : `${getStoredLang()}-${lang}`;
 
   const titleEl = document.getElementById("vocab-learn-title");
   const saveBtn = document.getElementById("vocab-learn-save");
+  const editBtn = document.getElementById("vocab-learn-edit");
   const settingsBtn = document.getElementById("vocab-learn-settings");
   const settingsPanel = document.getElementById("vocab-learn-settings-panel");
   const styleBtn = document.getElementById("vocab-learn-style");
@@ -14563,6 +16945,7 @@ if (page === "learn-vocab") {
   const readingRow = document.getElementById("vocab-learn-reading-row");
   const hintsRow = document.getElementById("vocab-learn-hints-row");
   const hintsInput = document.getElementById("vocab-learn-hints");
+  const originsInput = document.getElementById("vocab-learn-origins");
   const resetCountsBtn = document.getElementById("vocab-learn-reset-counts");
   const sidebarToggle = document.getElementById("vocab-learn-sidebar-toggle");
   const sidebar = document.getElementById("vocab-learn-sidebar");
@@ -14608,6 +16991,7 @@ if (page === "learn-vocab") {
         reading: modes.reading !== false,
       },
       hints: saved.hints !== false,
+      viewOrigins: saved.viewOrigins !== false,
     };
   }
 
@@ -14615,14 +16999,26 @@ if (page === "learn-vocab") {
   const completed = new Set(readJson(VOCAB_COMPLETED_KEY, []));
   let stats = readJson(VOCAB_STATS_KEY, {});
   const golden = new Set(readJson(VOCAB_GOLDEN_KEY, []));
+  const playStars = new Set(readJson(VOCAB_STARRED_KEY, []));
+  let loadPrompt = null;
+  let loadAnswer = null;
   // This language's last RECENT_ANSWERS answers, oldest first: 1 for correct, 0 for wrong.
   let recentAnswers = [].concat(readJson(VOCAB_RECENT_KEY, {})[lang] || []).slice(-RECENT_ANSWERS);
   // lessons: [{ name, keys }] in curriculum order; items: every word once, in the order it is first taught.
   const lessons = [];
   const items = [];
+  // Parsed cards are built when a lesson is played. The line text stays here so a large plan does not
+  // keep a full object, meaning list and set for every row at once.
   const words = new Map();
-  // Definition (punctuation and case dropped) -> every word written the way plainWord compares them.
-  const answersByLabel = new Map();
+  const rowByKey = new Map();
+  const extraMeanings = new Map();
+  // Plain form -> the word and its gloss, per language, so a one-letter miss can be checked
+  // against the real vocabulary without building a card for every row.
+  const dictByLang = new Map();
+  const WORD_CACHE = 4000;
+  let answersByLabel = new Map();
+  let pendingLabels = null;
+  let heavy = false;
   let hasReadings = false;
   let loaded = false;
   let filter = "todo";
@@ -14653,13 +17049,28 @@ if (page === "learn-vocab") {
     counts[ok ? "correct" : "wrong"] += 1;
     counts.run = ok ? counts.run + 1 : 0;
     stats[key] = counts;
+    const info = infoFor(key);
+    if (info && info.listKey) stats[info.listKey] = { correct: counts.correct, wrong: counts.wrong, run: counts.run };
     saveStats();
     recentAnswers = [...recentAnswers, ok ? 1 : 0].slice(-RECENT_ANSWERS);
     saveRecent();
     if (!ok || golden.has(key) || counts.run < settings.goldenStreak) return false;
     golden.add(key);
+    if (info && info.listKey) golden.add(info.listKey);
     saveGolden();
     return true;
+  }
+
+  function markLearned(key) {
+    const info = infoFor(key);
+    let changed = false;
+    [key, info && info.listKey].forEach((id) => {
+      if (id && !completed.has(id)) {
+        completed.add(id);
+        changed = true;
+      }
+    });
+    if (changed) saveCompleted();
   }
 
   function accuracyText() {
@@ -14715,38 +17126,221 @@ if (page === "learn-vocab") {
 
   // A word that appears in several lessons is one word: its meanings are merged, first lesson first. A sentence
   // keeps its translation whole, commas and all. A word written as several forms ("endangered, endangers")
-  // shows its first few and accepts any of them.
-  function loadLessons(data) {
-    data.forEach(([name, rows]) => {
-      const keys = [];
-      rows.forEach((row) => {
-        const [word, reading, meaningText] = String(row).split("\t");
-        if (!word) return;
-        const key = `${lang}|${word}`;
-        let info = words.get(key);
-        if (!info) {
-          const forms = sentences ? [word] : splitMeanings(word);
-          info = { key, word: forms.slice(0, LABEL_MEANINGS).join(", "), forms, reading: reading || "", meanings: [] };
-          words.set(key, info);
-          items.push(key);
-        } else if (!info.reading && reading) {
-          info.reading = reading;
-        }
-        const meanings = sentences ? [String(meaningText || "").trim()].filter(Boolean) : splitMeanings(meaningText);
-        meanings.forEach((meaning) => {
-          if (!info.meanings.includes(meaning)) info.meanings.push(meaning);
-        });
-        if (!keys.includes(key)) keys.push(key);
+  // shows its first few and accepts any of them. The line stays a string until a card needs it.
+  function fieldsOf(line) {
+    const text = String(line || "");
+    const tab1 = text.indexOf("\t");
+    const tab2 = tab1 < 0 ? -1 : text.indexOf("\t", tab1 + 1);
+    return {
+      word: tab1 < 0 ? text : text.slice(0, tab1),
+      reading: tab1 < 0 ? "" : text.slice(tab1 + 1, tab2 < 0 ? text.length : tab2),
+      meaningText: tab2 < 0 ? "" : text.slice(tab2 + 1),
+    };
+  }
+
+  function answerOfKey(key) {
+    if (!planCodes.length) return lang;
+    const bar = key.indexOf("|");
+    const head = bar < 0 ? key : key.slice(0, bar);
+    const dash = head.lastIndexOf("-");
+    return dash < 0 ? lang : head.slice(dash + 1);
+  }
+
+  function promptOfKey(key) {
+    if (!planCodes.length) return getStoredLang();
+    const bar = key.indexOf("|");
+    const head = bar < 0 ? key : key.slice(0, bar);
+    const dash = head.lastIndexOf("-");
+    return dash < 0 ? getStoredLang() : head.slice(0, dash);
+  }
+
+  function parseInfo(key) {
+    const line = rowByKey.get(key);
+    if (line == null) return null;
+    const fields = fieldsOf(line);
+    if (!fields.word) return null;
+    const answer = answerOfKey(key);
+    const sourceWord = fields.word;
+    const wordShown = aficLearnWordOverride(area, promptOfKey(key), answer, sourceWord) || sourceWord;
+    const forms = sentences ? [wordShown] : splitMeanings(wordShown);
+    const extras = extraMeanings.get(key) || [];
+    const meanings = [];
+    const edited = aficLearnOverride(area, promptOfKey(key), answer, sourceWord);
+    if (edited) {
+      if (sentences) meanings.push(edited);
+      else splitMeanings(edited).forEach((meaning) => meanings.push(meaning));
+    } else if (sentences) {
+      [fields.meaningText, ...extras].forEach((text) => {
+        const meaning = String(text || "").trim();
+        if (meaning && !meanings.includes(meaning)) meanings.push(meaning);
       });
-      lessons.push({ name: String(name || ""), keys });
+    } else {
+      [fields.meaningText, ...extras].forEach((text) => {
+        splitMeanings(text).forEach((meaning) => {
+          if (!meanings.includes(meaning)) meanings.push(meaning);
+        });
+      });
+    }
+    const listKey = planCodes.length ? answer + "|" + fields.word : "";
+    return {
+      key,
+      word: forms.slice(0, LABEL_MEANINGS).join(", "),
+      forms,
+      reading: fields.reading || "",
+      meanings,
+      answerLang: answer,
+      promptLang: promptOfKey(key),
+      listKey: listKey && listKey !== key ? listKey : "",
+      label: meanings.slice(0, LABEL_MEANINGS).join(", "),
+      meaningSet: new Set(meanings.map(plainText)),
+      sourceWord,
+    };
+  }
+
+  function infoFor(key) {
+    const cached = words.get(key);
+    if (cached) return cached;
+    const info = parseInfo(key);
+    if (!info) return null;
+    if (words.size >= WORD_CACHE) words.clear();
+    words.set(key, info);
+    if (info.reading) hasReadings = true;
+    return info;
+  }
+
+  // Only labels shared by two words are kept. A large plan skips this index and builds it per lesson.
+  function noteSynonym(key, fields) {
+    if (heavy || !pendingLabels) return;
+    const answer = answerOfKey(key);
+    const forms = sentences ? [fields.word] : splitMeanings(fields.word);
+    const meanings = sentences ? [String(fields.meaningText || "").trim()].filter(Boolean) : splitMeanings(fields.meaningText);
+    const labelKey = plainText(meanings.slice(0, LABEL_MEANINGS).join(", "));
+    if (!labelKey) return;
+    forms.forEach((form) => {
+      const plain = plainWord(form, answer);
+      if (!plain) return;
+      const known = answersByLabel.get(labelKey);
+      if (known) {
+        known.add(plain);
+        return;
+      }
+      const first = pendingLabels.get(labelKey);
+      if (first === undefined) pendingLabels.set(labelKey, plain);
+      else if (first !== plain) {
+        pendingLabels.delete(labelKey);
+        answersByLabel.set(labelKey, new Set([first, plain]));
+      }
     });
-    words.forEach((info) => {
-      info.label = info.meanings.slice(0, LABEL_MEANINGS).join(", ");
-      info.meaningSet = new Set(info.meanings.map(plainText));
-      if (info.reading) hasReadings = true;
-      const sameLabel = answersByLabel.get(plainText(info.label)) || new Set();
-      info.forms.forEach((form) => sameLabel.add(plainWord(form)));
-      answersByLabel.set(plainText(info.label), sameLabel);
+  }
+
+  function addDict(code, surface, gloss, prompt) {
+    const plain = plainWord(surface, code);
+    if (!plain) return;
+    let bucket = dictByLang.get(code);
+    if (!bucket) {
+      bucket = new Map();
+      dictByLang.set(code, bucket);
+    }
+    const ui = getStoredLang();
+    const existing = bucket.get(plain);
+    const better = !existing
+      || (!existing.gloss && gloss)
+      || (prompt === ui && gloss && existing.prompt !== ui);
+    if (better) bucket.set(plain, { surface, gloss: gloss || (existing && existing.gloss) || "", prompt });
+  }
+
+  // A sentence also contributes its words, so "work" can be told apart from a one-letter typo of "word".
+  function noteDictionary(key, fields) {
+    const code = answerOfKey(key);
+    const prompt = promptOfKey(key);
+    const gloss = sentences ? String(fields.meaningText || "").trim() : (splitMeanings(fields.meaningText)[0] || "");
+    const forms = sentences ? [fields.word] : splitMeanings(fields.word);
+    forms.forEach((form) => {
+      if (!form) return;
+      addDict(code, form, gloss, prompt);
+      if (!sentences || code === "zh" || code === "ja" || code === "ko") return;
+      if (!/\s/.test(form)) return;
+      form.split(/\s+/).forEach((part) => {
+        if (part) addDict(code, part, "", prompt);
+      });
+    });
+  }
+
+  function rememberLine(key, line, fields) {
+    if (fields.reading) hasReadings = true;
+    noteDictionary(key, fields);
+    if (!rowByKey.has(key)) {
+      rowByKey.set(key, line);
+      items.push(key);
+      noteSynonym(key, fields);
+      return;
+    }
+    const prev = fieldsOf(rowByKey.get(key));
+    if (!prev.reading && fields.reading) {
+      rowByKey.set(key, fields.word + "\t" + fields.reading + "\t" + (prev.meaningText || fields.meaningText));
+    }
+    if (fields.meaningText && fields.meaningText !== prev.meaningText) {
+      const bag = extraMeanings.get(key) || [];
+      if (!bag.includes(fields.meaningText)) bag.push(fields.meaningText);
+      if (bag.length) extraMeanings.set(key, bag);
+      noteSynonym(key, fields);
+    }
+  }
+
+  function indexLessonSynonyms(keys) {
+    if (!heavy) return;
+    answersByLabel = new Map();
+    keys.forEach((key) => {
+      const info = parseInfo(key);
+      if (!info || !info.label) return;
+      const labelKey = plainText(info.label);
+      const bucket = answersByLabel.get(labelKey) || new Set();
+      info.forms.forEach((form) => bucket.add(plainWord(form, info.answerLang || lang)));
+      answersByLabel.set(labelKey, bucket);
+    });
+  }
+
+  // Walks one file in short slices so the loading percent can move and the tab stays responsive.
+  function ingest(data, onFrac) {
+    const answer = loadAnswer || lang;
+    const prompt = loadPrompt || getStoredLang();
+    const prefix = planCodes.length ? prompt + "-" + answer + "|" : lang + "|";
+    const group = [];
+    let lesson = 0;
+    let row = 0;
+    let seen = 0;
+    let total = 0;
+    for (let i = 0; i < data.length; i++) total += ((data[i] && data[i][1]) || []).length;
+    if (!total) total = 1;
+    return new Promise((resolve) => {
+      const step = () => {
+        const end = performance.now() + 12;
+        while (performance.now() < end && lesson < data.length) {
+          const entry = data[lesson] || ["", []];
+          const rows = entry[1] || [];
+          if (!group[lesson]) group[lesson] = { name: String(entry[0] || ""), keys: [] };
+          const bucket = group[lesson];
+          const rowStart = row;
+          const stop = Math.min(rows.length, row + 250);
+          for (; row < stop; row++) {
+            const line = String(rows[row]);
+            const fields = fieldsOf(line);
+            if (!fields.word) continue;
+            const key = prefix + fields.word;
+            rememberLine(key, line, fields);
+            if (!bucket.keys.includes(key)) bucket.keys.push(key);
+          }
+          seen += row - rowStart;
+          if (row >= rows.length) {
+            lesson += 1;
+            row = 0;
+          }
+        }
+        if (onFrac) onFrac(Math.min(1, seen / total));
+        if (lesson < data.length) setTimeout(step, 0);
+        else resolve(group);
+      };
+      step();
     });
   }
 
@@ -14759,8 +17353,8 @@ if (page === "learn-vocab") {
   }
 
   // The alphabet teaches hiragana and katakana apart, so there they are never treated as the same.
-  function plainWord(text) {
-    return plainIn(alphabet ? "" : lang, text);
+  function plainWord(text, code) {
+    return plainIn(alphabet ? "" : (code == null ? lang : code), text);
   }
 
   const isKatakana = (text) => /[\u30a0-\u30ff]/.test(text);
@@ -14786,18 +17380,130 @@ if (page === "learn-vocab") {
   // Any word (or sentence) with the same definition is accepted too: "Ciao!" answers "Bye!" as well as "Arrivederci!".
   // Pinyin letters can also be typed with tone numbers ("ma3" for "mǎ").
   function wordMatches(info, input) {
-    const typed = plainWord(input);
+    const code = info.answerLang || lang;
+    const typed = plainWord(input, code);
     if (!typed) return false;
-    if (alphabet && lang === "zh" && pinyinKey(input) === pinyinKey(info.word)) return true;
-    if (info.forms.some((form) => typed === plainWord(form))) return true;
+    if (alphabet && code === "zh" && pinyinKey(input) === pinyinKey(info.word)) return true;
+    if (info.forms.some((form) => typed === plainWord(form, code))) return true;
     if (alphabet && isKatakana(typed) !== isKatakana(info.word)) return false;
     return (answersByLabel.get(plainText(info.label)) || new Set()).has(typed);
   }
 
   function readingMatches(info, input) {
-    if (lang === "zh") return pinyinKey(input) === pinyinKey(info.reading);
+    if ((info.answerLang || lang) === "zh") return pinyinKey(input) === pinyinKey(info.reading);
     const typed = romanKey(input);
     return !!typed && typed === romanKey(info.reading);
+  }
+
+  function answerTokens(text, code) {
+    const raw = String(text || "").trim();
+    if (!raw) return [];
+    if (code === "zh" || code === "ja" || code === "ko") return [{ raw, plain: plainWord(raw, code) }];
+    return raw.split(/\s+/).filter(Boolean).map((part) => ({ raw: part, plain: plainWord(part, code) })).filter((token) => token.plain);
+  }
+
+  // One substitution, or one extra or missing letter.
+  function oneLetterOff(a, b) {
+    if (!a || !b || a === b) return false;
+    const x = [...a];
+    const y = [...b];
+    const gap = x.length - y.length;
+    if (gap === 0) {
+      let diff = 0;
+      for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) diff += 1;
+      return diff === 1;
+    }
+    if (gap !== 1 && gap !== -1) return false;
+    const short = gap > 0 ? y : x;
+    const long = gap > 0 ? x : y;
+    let i = 0;
+    let j = 0;
+    let skipped = false;
+    while (i < short.length && j < long.length) {
+      if (short[i] === long[j]) {
+        i += 1;
+        j += 1;
+      } else if (skipped) {
+        return false;
+      } else {
+        skipped = true;
+        j += 1;
+      }
+    }
+    return true;
+  }
+
+  function knownEntry(code, plain) {
+    const hit = (dictByLang.get(code) || new Map()).get(plain);
+    if (hit) return hit;
+    const help = code === lang ? toUi : code === getStoredLang() ? toLearned : null;
+    if (!help || !help.has(plain)) return null;
+    const list = help.get(plain) || [];
+    return { surface: plain, gloss: list.slice(0, 3).join(", "), prompt: getStoredLang() };
+  }
+
+  // Words that differ from the answer by one letter. Null when the answer is not that close.
+  function nearPairs(info, input) {
+    const code = info.answerLang || lang;
+    const typed = answerTokens(input, code);
+    if (!typed.length) return null;
+    let best = null;
+    info.forms.forEach((form) => {
+      const expected = answerTokens(form, code);
+      if (expected.length !== typed.length) return;
+      const diffs = [];
+      for (let i = 0; i < typed.length; i++) {
+        if (typed[i].plain === expected[i].plain) continue;
+        if (!oneLetterOff(typed[i].plain, expected[i].plain)) return;
+        diffs.push({
+          typed: typed[i].raw,
+          expected: expected[i].raw,
+          typedPlain: typed[i].plain,
+          expectedPlain: expected[i].plain,
+        });
+      }
+      if (diffs.length && (!best || diffs.length < best.length)) best = diffs;
+    });
+    return best;
+  }
+
+  function glossForExpected(info, code, diff) {
+    if (info.forms.some((form) => plainWord(form, code) === diff.expectedPlain)) return info.label;
+    const known = knownEntry(code, diff.expectedPlain);
+    return (known && known.gloss) || "";
+  }
+
+  // An exact answer wins. One wrong letter is a typo when that spelling is not a real word,
+  // and a wrong answer when it is.
+  function gradeWord(info, input) {
+    if (wordMatches(info, input)) return { ok: true };
+    const diffs = nearPairs(info, input);
+    if (!diffs) return { ok: false };
+    const code = info.answerLang || lang;
+    const accepted = new Set();
+    info.forms.forEach((form) => {
+      accepted.add(plainWord(form, code));
+      answerTokens(form, code).forEach((token) => accepted.add(token.plain));
+    });
+    const wrongWords = [];
+    const typos = [];
+    diffs.forEach((diff) => {
+      if (accepted.has(diff.typedPlain)) return;
+      const known = knownEntry(code, diff.typedPlain);
+      if (known) {
+        wrongWords.push({
+          typed: diff.typed,
+          expected: diff.expected,
+          typedGloss: known.gloss || "",
+          expectedGloss: glossForExpected(info, code, diff),
+        });
+      } else {
+        typos.push(diff);
+      }
+    });
+    if (wrongWords.length) return { ok: false, wrongWords };
+    if (typos.length) return { ok: true, typos };
+    return { ok: true };
   }
 
   /* ---------- game ---------- */
@@ -14810,7 +17516,12 @@ if (page === "learn-vocab") {
     return list;
   }
 
-  const definitionOf = (info) => ({ label: info.label, word: info.word });
+  const definitionOf = (info) => ({
+    label: info.label,
+    word: info.word,
+    answerLang: info.answerLang,
+    promptLang: info.promptLang,
+  });
 
   // Wrong definitions come from the whole curriculum; a word sharing any meaning with the right one is skipped,
   // so a "wrong" definition is never actually right.
@@ -14818,8 +17529,8 @@ if (page === "learn-vocab") {
     const taken = new Set([info.label, ...(exclude || [])].map(plainText));
     const picks = [];
     for (let guard = 0; picks.length < count && guard < count * 60 && items.length > 1; guard++) {
-      const other = words.get(items[Math.floor(Math.random() * items.length)]);
-      if (!other.label || taken.has(plainText(other.label))) continue;
+      const other = parseInfo(items[Math.floor(Math.random() * items.length)]);
+      if (!other || !other.label || taken.has(plainText(other.label))) continue;
       if (other.meanings.some((meaning) => info.meaningSet.has(plainText(meaning)))) continue;
       taken.add(plainText(other.label));
       picks.push(definitionOf(other));
@@ -14842,7 +17553,7 @@ if (page === "learn-vocab") {
     const inLesson = lessonKeys(n);
     const all = isLessonCompleted(n);
     const dealt = only ? (key) => only.has(key) : (key) => all || !completed.has(key);
-    const lessonWords = inLesson.filter(dealt).map((key) => words.get(key));
+    const lessonWords = inLesson.filter(dealt).map((key) => infoFor(key)).filter(Boolean);
     const cards = [];
     lessonWords.forEach((info) => {
       modesFor(info).forEach((mode) => cards.push({ id: `${info.key}|${mode}`, mode, info }));
@@ -14866,8 +17577,10 @@ if (page === "learn-vocab") {
   function startLesson(n, replay, progress) {
     if (n && !isLessonReady(n)) n = firstTodoLesson();
     currentLesson = n;
+    revealLessonId = n || 0;
     play = null;
     if (n) {
+      indexLessonSynonyms(lessonKeys(n));
       const only = progress && Array.isArray(progress.words) && progress.words.length ? new Set(progress.words) : null;
       if (!only && !replay && isLessonCompleted(n)) {
         play = { lesson: n, finished: true };
@@ -14918,10 +17631,7 @@ if (page === "learn-vocab") {
       streak += 1;
       play.correct.add(round.card.id);
       const allCorrect = play.cards.every((card) => card.info.key !== key || play.correct.has(card.id));
-      if (allCorrect && !play.missed.has(key) && !completed.has(key)) {
-        completed.add(key);
-        saveCompleted();
-      }
+      if (allCorrect && !play.missed.has(key)) markLearned(key);
     } else {
       streak = 0;
       play.missed.add(key);
@@ -14958,7 +17668,11 @@ if (page === "learn-vocab") {
   const isReview = (key) => !!expState.cards[key] && expState.cards[key].interval > 0;
 
   // Golden words leave the Exponential line for good.
-  const expPlayable = (key) => words.has(key) && !golden.has(key) && modesFor(words.get(key)).length > 0;
+  const expPlayable = (key) => {
+    if (!rowByKey.has(key) || golden.has(key)) return false;
+    const info = infoFor(key);
+    return !!info && modesFor(info).length > 0;
+  };
 
   const expReviewKeys = () => Object.keys(expState.cards).filter((key) => isReview(key) && expPlayable(key));
   const earliestDue = (keys) => keys.reduce((a, b) => (expState.cards[b].due < expState.cards[a].due ? b : a));
@@ -14986,7 +17700,12 @@ if (page === "learn-vocab") {
       return;
     }
     play.finished = false;
-    const info = words.get(key);
+    const info = infoFor(key);
+    if (!info) {
+      play.round = null;
+      play.finished = true;
+      return;
+    }
     const card = expCard(key);
     const modes = modesFor(info);
     const recent = Array.isArray(card.recent) ? card.recent : [];
@@ -15020,8 +17739,7 @@ if (page === "learn-vocab") {
       round.cardGap = card.interval;
     }
     if (ok && !completed.has(key)) {
-      completed.add(key);
-      saveCompleted();
+      markLearned(key);
       round.becameKnown = true;
     }
     saveExpState();
@@ -15069,7 +17787,16 @@ if (page === "learn-vocab") {
     if (!round || round.answered || round.card.mode === "definition" || !value.trim()) return;
     round.typed = value;
     const { info } = round.card;
-    settleRound(round.card.mode === "word" ? wordMatches(info, value) : readingMatches(info, value));
+    if (round.card.mode === "reading") {
+      round.typos = null;
+      round.wrongWords = null;
+      settleRound(readingMatches(info, value));
+      return;
+    }
+    const grade = gradeWord(info, value);
+    round.typos = grade.typos || null;
+    round.wrongWords = grade.wrongWords || null;
+    settleRound(grade.ok);
   }
 
   function nextCard() {
@@ -15100,48 +17827,116 @@ if (page === "learn-vocab") {
     return button;
   }
 
+  function langName(code) {
+    const button = document.querySelector(`#lang-dropdown [data-lang="${CSS.escape(code || "")}"]`);
+    return button ? button.textContent : (code || "");
+  }
+
+  function appendOrigin(node, code) {
+    if (!settings.viewOrigins || !code) return node;
+    node.append(el("span", "learn-origin", " (" + langName(code) + ")"));
+    return node;
+  }
+
+  let revealLessonId = 0;
+  let lessonView = [];
+  let paintedLessons = "";
+  let lessonPaintQueued = false;
+
+  function lessonRowHeight() {
+    return 2.35 * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
+  }
+
+  // Only the rows on screen are built. A long course is thousands of lessons, and a button for every one
+  // of them is enough to stall the page.
+  function paintLessons(force) {
+    const shown = lessonView;
+    const rowH = lessonRowHeight();
+    const scrollTop = lessonList.scrollTop;
+    const viewH = lessonList.clientHeight || rowH * 12;
+    const start = shown.length ? Math.max(0, Math.floor(scrollTop / rowH) - 6) : 0;
+    const end = shown.length ? Math.min(shown.length, Math.ceil((scrollTop + viewH) / rowH) + 6) : 0;
+    const peekLesson = peekButton && peekButton.dataset ? peekButton.dataset.lesson : "";
+    const key = start + ":" + end + ":" + currentLesson + ":" + peekLesson + ":" + shown.length;
+    if (!force && key === paintedLessons) return;
+    paintedLessons = key;
+    const fragment = document.createDocumentFragment();
+    if (!shown.length) {
+      const emptyKey = filter === "completed" ? "kanji.noCompletedLessons" : "kanji.noTodoLessons";
+      fragment.appendChild(el("li", "kanji-learn-empty", getTranslation(emptyKey)));
+    } else {
+      const top = document.createElement("li");
+      top.className = "learn-lesson-pad";
+      top.style.height = (start * rowH) + "px";
+      top.setAttribute("aria-hidden", "true");
+      fragment.appendChild(top);
+      for (let i = start; i < end; i++) {
+        const n = shown[i];
+        const li = document.createElement("li");
+        li.style.height = rowH + "px";
+        const button = el("button", "", n + ". " + lessons[n - 1].name);
+        button.type = "button";
+        button.dataset.lesson = String(n);
+        if (!isLessonReady(n)) {
+          button.disabled = true;
+          button.classList.add("is-not-ready");
+          button.title = getTranslation("learn.notReady");
+        }
+        if (n === currentLesson) {
+          button.classList.add("is-active");
+          button.setAttribute("aria-current", "true");
+        }
+        if (peekLesson && button.dataset.lesson === peekLesson) {
+          button.classList.add("is-peeked");
+          peekButton = button;
+        }
+        li.appendChild(button);
+        fragment.appendChild(li);
+      }
+      const bottom = document.createElement("li");
+      bottom.className = "learn-lesson-pad";
+      bottom.style.height = Math.max(0, (shown.length - end) * rowH) + "px";
+      bottom.setAttribute("aria-hidden", "true");
+      fragment.appendChild(bottom);
+    }
+    lessonList.textContent = "";
+    lessonList.appendChild(fragment);
+    if (Math.abs(lessonList.scrollTop - scrollTop) > 1) lessonList.scrollTop = scrollTop;
+  }
+
   function renderSidebar() {
     filterBtn.textContent = getTranslation(filter === "completed" ? "kanji.learnCompleted" : "kanji.learnTodo");
     filterBtn.classList.toggle("is-active", filter === "completed");
     filterBtn.setAttribute("aria-pressed", filter === "completed" ? "true" : "false");
-
-    const scrollTop = lessonList.scrollTop;
-    lessonList.textContent = "";
-    const shown = lessonsInFilter();
-    if (!shown.length) {
-      const key = filter === "completed" ? "kanji.noCompletedLessons" : "kanji.noTodoLessons";
-      lessonList.appendChild(el("li", "kanji-learn-empty", getTranslation(key)));
-      return;
+    lessonList.classList.add("is-virtual");
+    lessonView = lessonsInFilter();
+    if (revealLessonId) {
+      const index = lessonView.indexOf(revealLessonId);
+      revealLessonId = 0;
+      if (index >= 0) {
+        const rowH = lessonRowHeight();
+        const top = index * rowH;
+        const view = lessonList.clientHeight || rowH * 8;
+        const bottom = top + rowH;
+        if (top < lessonList.scrollTop || bottom > lessonList.scrollTop + view) {
+          lessonList.scrollTop = Math.max(0, top - view / 2);
+        }
+      }
     }
-    const fragment = document.createDocumentFragment();
-    shown.forEach((n) => {
-      const li = document.createElement("li");
-      const button = el("button", "", `${n}. ${lessons[n - 1].name}`);
-      button.type = "button";
-      button.dataset.lesson = String(n);
-      if (!isLessonReady(n)) {
-        button.disabled = true;
-        button.classList.add("is-not-ready");
-        button.title = getTranslation("learn.notReady");
-      }
-      if (n === currentLesson) {
-        button.classList.add("is-active");
-        button.setAttribute("aria-current", "true");
-      }
-      li.appendChild(button);
-      fragment.appendChild(li);
-    });
-    lessonList.appendChild(fragment);
-    lessonList.scrollTop = scrollTop;
+    paintLessons(true);
+    requestAnimationFrame(() => paintLessons(true));
   }
 
   // Every definition keeps a slot for the word it belongs to; the word only becomes visible once the card
   // is answered, so nothing shifts when it appears.
   function fillDefinition(node, definition, reveal) {
     const shownWord = el("span", `kanji-play-reveal vocab-play-reveal${reveal ? "" : " is-hidden"}`, definition.word);
-    shownWord.lang = lang;
+    shownWord.lang = definition.answerLang || lang;
+    appendOrigin(shownWord, definition.answerLang || lang);
     if (!reveal) shownWord.setAttribute("aria-hidden", "true");
-    node.append(shownWord, el("span", "kanji-play-def", definition.label));
+    const meaning = el("span", "kanji-play-def", definition.label);
+    appendOrigin(meaning, definition.promptLang || getStoredLang());
+    node.append(shownWord, meaning);
   }
 
   function renderDefinitionRound(wrap, round) {
@@ -15159,6 +17954,7 @@ if (page === "learn-vocab") {
       button.type = "button";
       button.disabled = round.answered || round.phase !== 1;
       if (round.choice === choice) button.classList.add("is-active");
+      appendOxHint(button, choice);
       button.addEventListener("click", () => judge(choice));
       judges.append(button);
     });
@@ -15166,10 +17962,11 @@ if (page === "learn-vocab") {
 
     if (round.phase !== 2) return;
     const list = el("div", "kanji-play-options");
-    round.options.forEach((definition) => {
+    round.options.forEach((definition, index) => {
       const text = definition.label;
       const option = el("button", "kanji-play-option");
       fillDefinition(option, definition, round.answered);
+      appendOxHint(option, "x" + (index + 1));
       option.type = "button";
       option.disabled = round.answered;
       if (round.answered && text === label) {
@@ -15183,9 +17980,11 @@ if (page === "learn-vocab") {
   }
 
   function renderTypedRound(wrap, round) {
-    const { mode } = round.card;
+    const { mode, info } = round.card;
+    const answerCode = info.answerLang || lang;
     let labelKey = TEXT.typeWord;
-    if (mode === "reading") labelKey = lang === "zh" ? "learn.playTypePinyin" : "learn.playTypeRomanized";
+    if (mode === "reading") labelKey = (answerCode === "zh" ? "learn.playTypePinyin" : "learn.playTypeRomanized");
+    const instruction = getTranslation(labelKey) + " (" + langName(answerCode) + ")";
 
     const form = el("form", "kanji-play-actions");
     const input = el("input", "kanji-play-input");
@@ -15193,10 +17992,10 @@ if (page === "learn-vocab") {
     input.autocomplete = "off";
     input.spellcheck = false;
     input.setAttribute("autocapitalize", "off");
-    input.placeholder = getTranslation("kanji.playAnswerPlaceholder");
+    input.placeholder = formatTranslation("learn.typeAnswerIn", { lang: langName(answerCode) });
     input.value = round.typed;
     input.disabled = round.answered;
-    if (mode === "word") input.lang = lang;
+    input.lang = answerCode;
     if (round.answered) input.classList.add(round.ok ? "is-correct" : "is-wrong");
     if (round.becameGolden) input.classList.add("is-golden");
     const submit = el("button", "transfer-lang-chip", getTranslation("kanji.playSubmit"));
@@ -15207,7 +18006,7 @@ if (page === "learn-vocab") {
       submitTyped(input.value);
     });
     form.append(input, submit);
-    wrap.append(el("div", "kanji-play-label", getTranslation(labelKey)), form);
+    wrap.append(el("div", "kanji-play-label", instruction), form);
   }
 
   function renderPlay() {
@@ -15252,17 +18051,35 @@ if (page === "learn-vocab") {
       el("span", "", formatTranslation("kanji.playAccuracy", { n: accuracyText() })),
       el("span", "", formatTranslation("kanji.cardStreak", { n: countsFor(info.key).run, total: settings.goldenStreak }))
     );
+    const starKey = info.listKey || info.key;
+    const starBtn = el("button", "learn-play-star", playStars.has(starKey) ? "★" : "☆");
+    starBtn.type = "button";
+    starBtn.classList.toggle("is-on", playStars.has(starKey));
+    starBtn.setAttribute("aria-label", getTranslation("kanji.starredList"));
+    starBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (playStars.has(starKey)) playStars.delete(starKey);
+      else playStars.add(starKey);
+      localStorage.setItem(VOCAB_STARRED_KEY, JSON.stringify([...playStars]));
+      starBtn.textContent = playStars.has(starKey) ? "★" : "☆";
+      starBtn.classList.toggle("is-on", playStars.has(starKey));
+    });
+    meta.append(starBtn);
 
     // Word mode asks from the meaning, the other modes show the word. With hints on, Word mode adds the
     // reading and Reading mode adds the meaning. Both are the same size, a bit smaller for sentences.
     const question = el("div", "kanji-play-question");
     if (sentences) wrap.classList.add("is-sentence");
     if (card.mode === "word") {
-      question.append(el("div", "vocab-play-word", info.label));
+      const prompt = el("div", "vocab-play-word", info.label);
+      prompt.lang = info.promptLang || getStoredLang();
+      appendOrigin(prompt, info.promptLang || getStoredLang());
+      question.append(prompt);
       if (info.reading && settings.hints) question.append(el("div", "kanji-play-meaning", info.reading));
     } else {
       const shownWord = el("div", "vocab-play-word", info.word);
-      shownWord.lang = lang;
+      shownWord.lang = info.answerLang || lang;
+      appendOrigin(shownWord, info.answerLang || lang);
       question.append(shownWord);
       if (card.mode === "reading" && settings.hints) question.append(el("div", "kanji-play-meaning", info.label));
     }
@@ -15273,10 +18090,30 @@ if (page === "learn-vocab") {
     else renderTypedRound(wrap, round);
 
     if (round.answered) {
-      let status = getTranslation("kanji.playCorrect");
-      if (!round.ok && round.choice === "x" && round.correctShown) status = getTranslation("kanji.playWrongWasCorrect");
-      else if (!round.ok) status = formatTranslation("kanji.playWrongAnswer", { answer: answerText(card) });
-      wrap.append(el("div", `kanji-play-status ${round.ok ? "is-correct" : "is-wrong"}`, status));
+      if (round.typos) {
+        wrap.append(el("div", "kanji-play-status is-correct", getTranslation("kanji.playCorrect")));
+        const note = el("div", "kanji-play-status");
+        note.append(document.createTextNode(getTranslation("learn.typoNote") + " "));
+        round.typos.forEach((pair, index) => {
+          if (index) note.append(document.createTextNode(", "));
+          note.append(el("span", "learn-typo-word", pair.typed), document.createTextNode(" -> "), el("span", "learn-typo-word", pair.expected));
+        });
+        wrap.append(note);
+      } else if (round.wrongWords) {
+        wrap.append(el("div", "kanji-play-status is-wrong", getTranslation("learn.wrongWord")));
+        round.wrongWords.forEach((pair) => {
+          const wrongLine = el("div", "learn-typo-line");
+          wrongLine.append(el("span", "learn-typo-word is-wrong", pair.typed), document.createTextNode(pair.typedGloss ? " = " + pair.typedGloss : ""));
+          const rightLine = el("div", "learn-typo-line");
+          rightLine.append(el("span", "learn-typo-word is-right", pair.expected), document.createTextNode(pair.expectedGloss ? " = " + pair.expectedGloss : ""));
+          wrap.append(wrongLine, rightLine);
+        });
+      } else {
+        let status = getTranslation("kanji.playCorrect");
+        if (!round.ok && round.choice === "x" && round.correctShown) status = getTranslation("kanji.playWrongWasCorrect");
+        else if (!round.ok) status = formatTranslation("kanji.playWrongAnswer", { answer: answerText(card) });
+        wrap.append(el("div", `kanji-play-status ${round.ok ? "is-correct" : "is-wrong"}`, status));
+      }
       if (round.comesBack) {
         const key = round.becameKnown ? "kanji.expBecameKnown" : "kanji.expComesBack";
         wrap.append(el("div", "kanji-play-status", formatTranslation(key, { n: round.comesBack })));
@@ -15285,6 +18122,74 @@ if (page === "learn-vocab") {
     }
     return wrap;
   }
+
+  function learnCardKey(info) {
+    return area + "|" + (info.promptLang || getStoredLang()) + "|" + (info.answerLang || lang) + "|" + (info.sourceWord || info.word);
+  }
+
+  const notesPanel = document.getElementById("vocab-learn-notes");
+  const notesList = document.getElementById("vocab-learn-notes-list");
+  const notesInput = document.getElementById("vocab-learn-notes-input");
+  const notesPost = document.getElementById("vocab-learn-notes-post");
+  const notesToggle = document.getElementById("vocab-learn-notes-toggle");
+  const NOTES_OPEN_KEY = "learnNotesOpen";
+  let notesOpen = localStorage.getItem(NOTES_OPEN_KEY) !== "0";
+
+  function currentCardInfo() {
+    return play && play.round && play.round.card && play.round.card.info;
+  }
+
+  function renderNotes() {
+    if (!notesPanel || !notesList) return;
+    const info = currentCardInfo();
+    notesPanel.classList.toggle("hidden", !loaded || !items.length);
+    notesPanel.classList.toggle("is-open", notesOpen);
+    if (notesToggle) {
+      notesToggle.classList.toggle("is-active", notesOpen);
+      notesToggle.setAttribute("aria-pressed", notesOpen ? "true" : "false");
+    }
+    const key = info ? learnCardKey(info) : "";
+    if (notesPanel.dataset.card !== key && notesInput) notesInput.value = "";
+    notesPanel.dataset.card = key;
+    notesList.textContent = "";
+    if (!info) {
+      notesList.append(el("p", "learn-notes-empty", "Open a card to write a note."));
+      return;
+    }
+    const notes = readAficEdits().notes[key] || [];
+    if (!notes.length) notesList.append(el("p", "learn-notes-empty", "No notes for this card yet."));
+    notes.forEach((note) => {
+      const row = el("div", "afic-note");
+      row.append(el("div", "afic-note-author", note.author || ""), el("div", "afic-note-text", note.text || ""));
+      notesList.append(row);
+    });
+  }
+
+  function postCardNote() {
+    const info = currentCardInfo();
+    const text = notesInput ? notesInput.value.trim() : "";
+    if (!info || !text) return;
+    const key = learnCardKey(info);
+    const store = readAficEdits();
+    const note = { at: new Date().toISOString(), author: getCurrentAuthorName(), text: aficClean(text) };
+    if (!store.notes[key]) store.notes[key] = [];
+    store.notes[key].push(note);
+    store.log.push({ at: note.at, author: note.author, area: "note", target: key, field: "note", before: "", after: note.text });
+    writeAficEdits(store);
+    if (notesInput) notesInput.value = "";
+    renderNotes();
+  }
+
+  if (notesPost) notesPost.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    postCardNote();
+  });
+  if (notesToggle) notesToggle.addEventListener("click", () => {
+    notesOpen = !notesOpen;
+    localStorage.setItem(NOTES_OPEN_KEY, notesOpen ? "1" : "0");
+    renderNotes();
+  });
 
   function focusPlay() {
     if (!settingsPanel.classList.contains("hidden")) return;
@@ -15326,11 +18231,18 @@ if (page === "learn-vocab") {
     sidebar.classList.toggle("hidden", exp || !ready);
     sidebarToggle.classList.toggle("hidden", exp || !ready);
     saveBtn.classList.toggle("hidden", !ready);
+    const roundInfo = play && play.round && play.round.card && play.round.card.info;
+    const canEditCard = !!(ready && roundInfo && aficCanEditPair(roundInfo.promptLang || getStoredLang(), roundInfo.answerLang || lang));
+    if (editBtn) editBtn.classList.toggle("hidden", !canEditCard);
     settingsBtn.classList.toggle("hidden", !ready);
     if (!exp && ready) renderSidebar();
     renderLesson();
+    renderNotes();
+    syncEditor();
     if (ready) saveProgress();
   }
+
+  document.addEventListener("adminmodechange", () => render());
 
   // An answered card moves on with a click anywhere except on links and other controls. This runs in the
   // capture phase and stops the click, so it never also lands on a button of the next card. A click in the
@@ -15341,8 +18253,14 @@ if (page === "learn-vocab") {
       e.stopPropagation();
       return;
     }
+    if (oxBindClickGuard) {
+      oxBindClickGuard = false;
+      return;
+    }
+    if (oxKeybindDialogOpen()) return;
     if (!play || !play.round || !play.round.answered || e.button !== 0) return;
     if (!settingsPanel.classList.contains("hidden")) return;
+    if (e.target.closest && e.target.closest(".navbar, .kanji-learn-bar, .kanji-learn-sidebar, #vocab-learn-notes, #vocab-learn-editor, .kanji-learn-settings-panel, .ox-keybind-dialog, .learn-play-star, .afic-notes")) return;
     if (!e.target.closest(".kanji-play") && e.target.closest("a, button, input, select, textarea, label")) return;
     e.preventDefault();
     e.stopPropagation();
@@ -15350,20 +18268,36 @@ if (page === "learn-vocab") {
   }, true);
 
   document.addEventListener("keydown", (e) => {
+    if (oxKeybindListening || oxKeybindDialogOpen()) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable='true']")) return;
+    if (e.repeat) return;
+    if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable='true'], #vocab-learn-notes, #vocab-learn-editor, .kanji-learn-settings-panel, .ox-keybind-dialog")) return;
     const round = play && play.round;
-    if (round && round.answered && (e.key === "Enter" || e.key === " ")) {
-      if (e.repeat || (e.target.closest && e.target.closest("a, button"))) return;
+    if (round && round.answered && !settingsPanel.classList.contains("hidden")) return;
+    if (round && round.answered && e.key !== "Shift" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Meta" && e.key !== "CapsLock") {
+      if (e.target.closest && e.target.closest("a, button") && (e.key === "Enter" || e.key === " ")) return;
       e.preventDefault();
+      e.stopPropagation();
       nextCard();
       return;
     }
-    if (!round || round.answered || round.card.mode !== "definition" || round.phase !== 1) return;
-    const key = e.key.toLowerCase();
-    if (key !== "o" && key !== "x") return;
+    runOxKeybind(e, e.code, round, judge, pickOption);
+  });
+
+  document.addEventListener("mousedown", (e) => {
+    if (oxKeybindListening || oxKeybindDialogOpen()) return;
+    if (e.target.closest && e.target.closest("a, button, input, select, textarea, label, .navbar, .kanji-learn-settings-panel, .ox-keybind-dialog")) return;
+    const round = play && play.round;
+    if (!round || round.answered || round.card.mode !== "definition") return;
+    runOxKeybind(e, "Mouse" + e.button, round, judge, pickOption);
+  }, true);
+
+  document.addEventListener("contextmenu", (e) => {
+    if (!oxKeybindAction("Mouse2")) return;
+    const round = play && play.round;
+    if (!round || round.answered || round.card.mode !== "definition") return;
+    if (e.target.closest && e.target.closest("a, button, input, select, textarea, .ox-keybind-dialog")) return;
     e.preventDefault();
-    judge(key);
   });
 
   /* ---------- sidebar ---------- */
@@ -15412,12 +18346,14 @@ if (page === "learn-vocab") {
     fragment.append(el("h3", "kanji-learn-peek-title", lessonTitle(n)));
     const list = el("div", "vocab-peek-list");
     lessonKeys(n).forEach((key) => {
-      const info = words.get(key);
+      const info = infoFor(key);
+      if (!info) return;
       const row = el("div", "vocab-peek-row");
       if (completed.has(key)) row.classList.add("is-completed");
       if (golden.has(key)) row.classList.add("is-golden");
       const shownWord = el("span", "vocab-peek-word", info.word);
-      shownWord.lang = lang;
+      shownWord.lang = info.answerLang || lang;
+      appendOrigin(shownWord, info.answerLang || lang);
       const { correct, wrong } = countsFor(key);
       const count = el("span", "kanji-box-count vocab-peek-count");
       count.append(el("span", "is-correct", `✓${correct}`), el("span", "is-wrong", `✗${wrong}`));
@@ -15496,9 +18432,19 @@ if (page === "learn-vocab") {
   });
 
   lessonList.addEventListener("scroll", () => {
-    if (peeking) placePeek();
+    if (!lessonPaintQueued) {
+      lessonPaintQueued = true;
+      requestAnimationFrame(() => {
+        lessonPaintQueued = false;
+        paintLessons(false);
+        if (peeking) placePeek();
+      });
+    } else if (peeking) {
+      placePeek();
+    }
   }, { passive: true });
   window.addEventListener("resize", () => {
+    paintLessons(true);
     if (peeking) placePeek();
   });
   window.addEventListener("blur", endPeek);
@@ -15568,10 +18514,15 @@ if (page === "learn-vocab") {
         });
       });
     }));
-    words.forEach((info) => {
-      const meaning = info.meanings[0];
-      if (isOneWord(info.word, lang)) addHelp(toUi, lang, info.word, meaning);
-      if (isOneWord(meaning, uiCode)) addHelp(toLearned, uiCode, meaning, info.word);
+    items.forEach((key) => {
+      const fields = fieldsOf(rowByKey.get(key) || "");
+      const meaning = sentences
+        ? String(fields.meaningText || "").trim()
+        : splitMeanings(fields.meaningText)[0];
+      const word = sentences ? fields.word : splitMeanings(fields.word).slice(0, LABEL_MEANINGS).join(", ");
+      if (!word || !meaning) return;
+      if (isOneWord(word, lang)) addHelp(toUi, lang, word, meaning);
+      if (isOneWord(meaning, uiCode)) addHelp(toLearned, uiCode, meaning, word);
     });
   }
 
@@ -15585,7 +18536,7 @@ if (page === "learn-vocab") {
     }
     files.forEach((p) => {
       const script = document.createElement("script");
-      script.src = `learn/data/vocab-${p}.js?v=0.7`;
+      script.src = `NewLearn/data/vocab-${p}.js?v=0.9`;
       script.onload = script.onerror = () => {
         if (--left === 0) buildWordHelp();
       };
@@ -15749,6 +18700,7 @@ if (page === "learn-vocab") {
     readingRow.classList.toggle("hidden", !hasReadings);
     hintsRow.classList.toggle("hidden", !hasReadings);
     hintsInput.checked = settings.hints;
+    if (originsInput) originsInput.checked = settings.viewOrigins;
     expInputs.forEach((input) => {
       input.value = String(settings.exp[input.dataset.exp]);
     });
@@ -15822,6 +18774,14 @@ if (page === "learn-vocab") {
     render();
   });
 
+  if (originsInput) {
+    originsInput.addEventListener("change", () => {
+      settings.viewOrigins = originsInput.checked;
+      saveSettings();
+      render();
+    });
+  }
+
   // Only this language is reset: its words' counts, learned outlines and Golden marks, its accuracy, and its
   // saves and Exponential lines in every UI language.
   resetCountsBtn.addEventListener("click", () => {
@@ -15849,7 +18809,118 @@ if (page === "learn-vocab") {
     restart();
   });
 
+  const oxKeybindBtn = document.getElementById("vocab-learn-ox-keybinds");
+  const oxKeybindDialog = document.getElementById("vocab-ox-keybind-dialog");
+  const oxKeybindList = document.getElementById("vocab-ox-keybind-list");
+  const oxKeybindReset = document.getElementById("vocab-ox-keybind-reset");
+  const oxKeybindSave = document.getElementById("vocab-ox-keybind-save");
+  let oxListenId = "";
+  let oxKeybindDraft = null;
+
+  function stageOxKeybind(id, code) {
+    if (!oxKeybindDraft) return;
+    OX_KEYBIND_IDS.forEach((other) => {
+      if (other !== id && code && oxKeybindDraft[other] === code) oxKeybindDraft[other] = "";
+    });
+    oxKeybindDraft[id] = code;
+  }
+
+  function setOxKeybindOpen(open) {
+    if (!oxKeybindDialog) return;
+    oxKeybindListening = false;
+    oxListenId = "";
+    oxKeybindDraft = open ? Object.assign({}, readOxKeybinds()) : null;
+    oxKeybindDialog.classList.toggle("hidden", !open);
+    if (oxKeybindBtn) oxKeybindBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) renderOxKeybinds();
+  }
+
+  function renderOxKeybinds() {
+    if (!oxKeybindList) return;
+    const binds = oxKeybindDraft || readOxKeybinds();
+    oxKeybindList.textContent = "";
+    OX_KEYBIND_IDS.forEach((id) => {
+      const row = document.createElement("div");
+      row.className = "ox-keybind-row";
+      if (oxListenId === id) row.classList.add("is-listening");
+      const name = document.createElement("span");
+      name.className = "ox-keybind-name";
+      const value = oxListenId === id ? getTranslation("learn.oxKeybindPress") : oxKeybindDisplay(binds[id]);
+      name.textContent = OX_KEYBIND_LABELS[id] + " - " + value;
+      const change = document.createElement("button");
+      change.type = "button";
+      change.className = "transfer-lang-chip";
+      change.textContent = getTranslation("learn.oxKeybindChange");
+      change.addEventListener("click", () => {
+        oxListenId = id;
+        oxKeybindListening = true;
+        renderOxKeybinds();
+      });
+      row.append(name, change);
+      oxKeybindList.append(row);
+    });
+  }
+
+  if (oxKeybindBtn) {
+    oxKeybindBtn.addEventListener("click", () => setOxKeybindOpen(oxKeybindDialog.classList.contains("hidden")));
+  }
+  if (oxKeybindDialog) {
+    oxKeybindDialog.addEventListener("click", (e) => {
+      if (e.target === oxKeybindDialog) setOxKeybindOpen(false);
+    });
+  }
+  if (oxKeybindReset) {
+    oxKeybindReset.addEventListener("click", () => {
+      oxKeybindListening = false;
+      oxListenId = "";
+      oxKeybindDraft = Object.assign({}, OX_KEYBIND_DEFAULTS);
+      renderOxKeybinds();
+    });
+  }
+  if (oxKeybindSave) {
+    oxKeybindSave.addEventListener("click", () => {
+      if (oxKeybindDraft) writeOxKeybinds(oxKeybindDraft);
+      setOxKeybindOpen(false);
+      if (play && play.round && play.round.card.mode === "definition") render();
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (!oxKeybindListening || !oxListenId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.repeat) return;
+    if (e.key === "Escape") {
+      oxKeybindListening = false;
+      oxListenId = "";
+      renderOxKeybinds();
+      return;
+    }
+    stageOxKeybind(oxListenId, e.code);
+    oxKeybindListening = false;
+    oxListenId = "";
+    renderOxKeybinds();
+  }, true);
+
+  document.addEventListener("mousedown", (e) => {
+    if (!oxKeybindListening || !oxListenId) return;
+    if (e.button === 0 && e.target.closest && e.target.closest("button")) return;
+    if (e.button === 0 && e.target === oxKeybindDialog) return;
+    e.preventDefault();
+    e.stopPropagation();
+    stageOxKeybind(oxListenId, "Mouse" + e.button);
+    oxKeybindListening = false;
+    oxListenId = "";
+    renderOxKeybinds();
+  }, true);
+
+  document.addEventListener("contextmenu", (e) => {
+    if (oxKeybindListening) e.preventDefault();
+  }, true);
+
   document.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest("#vocab-ox-keybind-dialog")) return;
+    if (oxKeybindDialogOpen()) return;
     if (settingsPanel.classList.contains("hidden")) return;
     if (settingsPanel.contains(e.target) || settingsBtn.contains(e.target)) return;
     setSettingsOpen(false);
@@ -15857,7 +18928,12 @@ if (page === "learn-vocab") {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !settingsPanel.classList.contains("hidden")) {
+    if (e.key !== "Escape" || oxKeybindListening) return;
+    if (oxKeybindDialogOpen()) {
+      setOxKeybindOpen(false);
+      return;
+    }
+    if (!settingsPanel.classList.contains("hidden")) {
       setSettingsOpen(false);
       settingsBtn.focus();
     }
@@ -15875,6 +18951,60 @@ if (page === "learn-vocab") {
     saves[pair] = { lesson: currentLesson, streak, progress, savedAt: Date.now() };
     localStorage.setItem(VOCAB_SAVE_KEY, JSON.stringify(saves));
   }
+
+  const editor = document.getElementById("vocab-learn-editor");
+  const editorWord = document.getElementById("vocab-learn-editor-word");
+  const editorMeaning = document.getElementById("vocab-learn-editor-meaning");
+  const editorWordLabel = document.getElementById("vocab-learn-editor-word-label");
+  const editorMeaningLabel = document.getElementById("vocab-learn-editor-meaning-label");
+  const editorSave = document.getElementById("vocab-learn-editor-save");
+  const editorClose = document.getElementById("vocab-learn-editor-close");
+
+  function hideEditor() {
+    if (editor) editor.classList.add("hidden");
+  }
+
+  function syncEditor() {
+    if (!editor || editor.classList.contains("hidden")) return;
+    const info = currentCardInfo();
+    if (!info || editor.dataset.card !== learnCardKey(info)) hideEditor();
+  }
+
+  function openEditor() {
+    const info = currentCardInfo();
+    if (!info || !editor || !aficCanEditPair(info.promptLang || getStoredLang(), info.answerLang || lang)) return;
+    editor.dataset.card = learnCardKey(info);
+    if (editorWordLabel && editorWordLabel.firstChild) editorWordLabel.firstChild.textContent = (LANGUAGES[info.answerLang] || info.answerLang || "Word") + " ";
+    if (editorMeaningLabel && editorMeaningLabel.firstChild) editorMeaningLabel.firstChild.textContent = (LANGUAGES[info.promptLang] || info.promptLang || "Translation") + " ";
+    if (editorWord) editorWord.value = info.word || "";
+    if (editorMeaning) editorMeaning.value = info.label || "";
+    editor.classList.remove("hidden");
+    if (editorWord) editorWord.focus();
+  }
+
+  if (editBtn) editBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openEditor();
+  });
+  if (editorClose) editorClose.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    hideEditor();
+  });
+  if (editorSave) editorSave.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const info = currentCardInfo();
+    if (!info || !editorWord || !editorMeaning) return;
+    const source = info.sourceWord || info.word;
+    saveLearnSides(area, info.promptLang || getStoredLang(), info.answerLang || lang, source, info.word, info.label, editorWord.value, editorMeaning.value);
+    words.clear();
+    const fresh = infoFor(info.key);
+    if (fresh && play.round && play.round.card) play.round.card.info = fresh;
+    hideEditor();
+    render();
+  });
 
   saveBtn.addEventListener("click", () => {
     saveProgress();
@@ -15900,21 +19030,141 @@ if (page === "learn-vocab") {
   window.onLanguageChange = () => location.reload();
 
   function renderTitle() {
-    titleEl.textContent = learnAreaTitle(lang, area);
+    if (planCodes.length) {
+      const names = planCodes.map((code) => {
+        const button = document.querySelector(`#lang-dropdown [data-lang="${CSS.escape(code)}"]`);
+        return button ? button.textContent : code;
+      }).join(" · ");
+      titleEl.textContent = getTranslation("learn." + area) + " · " + names;
+    } else {
+      titleEl.textContent = learnAreaTitle(lang, area);
+    }
     document.title = `${titleEl.textContent} - Kanji Builder`;
   }
 
-  function loadVocab(done) {
-    const ready = () => (window[sentences ? "LEARN_SENTENCES" : alphabet ? "LEARN_ALPHABET" : "LEARN_VOCAB"] || {})[pair];
-    if (ready()) {
-      done(ready());
-      return;
+  function learnGlobalName() {
+    return sentences ? "LEARN_SENTENCES" : alphabet ? "LEARN_ALPHABET" : "LEARN_VOCAB";
+  }
+
+  function releasePair(pairName) {
+    const bag = window[learnGlobalName()];
+    if (bag) delete bag[pairName];
+  }
+
+  // onWait receives 0..1 while the file is still being parsed. The bar creeps so a large file does not
+  // sit at one number until the parse finishes.
+  function loadPairScript(pairName, onWait) {
+    const globalName = learnGlobalName();
+    return new Promise((resolve) => {
+      const ready = () => (window[globalName] || {})[pairName];
+      if (ready()) {
+        resolve(ready());
+        return;
+      }
+      let frac = 0;
+      let stopped = false;
+      const timer = setInterval(() => {
+        frac = Math.min(0.9, frac + (0.9 - frac) * 0.08);
+        if (onWait) onWait(frac);
+      }, 200);
+      const script = document.createElement("script");
+      script.src = `NewLearn/data/${STORE}-${pairName}.js?v=0.9`;
+      const finish = (data) => {
+        if (stopped) return;
+        stopped = true;
+        clearInterval(timer);
+        script.remove();
+        resolve(data);
+      };
+      script.onload = () => finish(ready() || null);
+      script.onerror = () => finish(null);
+      document.head.appendChild(script);
+    });
+  }
+
+  const loadScreen = document.getElementById("vocab-learn-loading");
+  const loadLabel = document.getElementById("vocab-learn-loading-label");
+  const loadBar = document.getElementById("vocab-learn-loading-bar");
+  const loadPercent = document.getElementById("vocab-learn-loading-percent");
+  const loadNote = document.getElementById("vocab-learn-loading-note");
+
+  function setLoadProgress(percent) {
+    const shown = Math.max(0, Math.min(100, Math.round(percent)));
+    if (loadBar) loadBar.style.width = shown + "%";
+    if (loadPercent) loadPercent.textContent = shown + "%";
+    if (loadScreen) loadScreen.setAttribute("aria-busy", shown < 100 ? "true" : "false");
+  }
+
+  function showHeavyNote(on) {
+    if (!loadNote) return;
+    loadNote.hidden = !on;
+    loadNote.textContent = on ? getTranslation("learn.planHeavy") : "";
+  }
+
+  // A lesson plan deals every direction among the UI language and the selected languages.
+  // Japanese and German vocabulary with an English UI gives EN-JP, JP-EN, EN-DE, DE-EN, JA-DE and DE-JA.
+  async function loadPlan() {
+    const langs = [getStoredLang(), ...planCodes];
+    const jobs = [];
+    langs.forEach((prompt) => {
+      langs.forEach((answer) => {
+        if (prompt !== answer) jobs.push({ prompt, answer });
+      });
+    });
+    const counts = (window.LEARN_COUNTS || {})[area] || {};
+    const estimated = jobs.reduce((sum, job) => sum + (counts[job.answer] || 0), 0);
+    heavy = estimated >= LEARN_HEAVY_ROWS;
+    showHeavyNote(heavy);
+    if (!heavy) pendingLabels = new Map();
+    const groups = [];
+    for (let i = 0; i < jobs.length; i++) {
+      const job = jobs[i];
+      const slice = 100 / jobs.length;
+      const base = i * slice;
+      const pairName = job.prompt + "-" + job.answer;
+      let data = await loadPairScript(pairName, (frac) => setLoadProgress(base + frac * slice * 0.65));
+      if (Array.isArray(data)) {
+        loadPrompt = job.prompt;
+        loadAnswer = job.answer;
+        const group = await ingest(data, (frac) => setLoadProgress(base + (0.65 + frac * 0.35) * slice));
+        groups.push(group);
+      }
+      data = null;
+      loadPrompt = null;
+      loadAnswer = null;
+      releasePair(pairName);
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
-    const script = document.createElement("script");
-    script.src = `learn/data/${STORE}-${pair}.js?v=0.7`;
-    script.onload = () => done(ready());
-    script.onerror = () => done(null);
-    document.head.appendChild(script);
+    pendingLabels = null;
+    const max = groups.reduce((n, group) => Math.max(n, group.length), 0);
+    for (let i = 0; i < max; i++) {
+      const keys = [];
+      let name = "";
+      groups.forEach((group) => {
+        const lesson = group[i];
+        if (!lesson) return;
+        if (!name) name = lesson.name;
+        lesson.keys.forEach((key) => {
+          if (!keys.includes(key)) keys.push(key);
+        });
+      });
+      if (keys.length) lessons.push({ name: name || String(i + 1), keys });
+    }
+  }
+
+  async function loadSingle() {
+    const total = ((window.LEARN_COUNTS || {})[area] || {})[lang] || 0;
+    heavy = total >= LEARN_HEAVY_ROWS;
+    showHeavyNote(heavy);
+    if (!heavy) pendingLabels = new Map();
+    let data = await loadPairScript(pair, (frac) => setLoadProgress(frac * 65));
+    if (Array.isArray(data)) {
+      const group = await ingest(data, (frac) => setLoadProgress(65 + frac * 35));
+      group.forEach((lesson) => lessons.push(lesson));
+    }
+    data = null;
+    pendingLabels = null;
+    releasePair(pair);
   }
 
   const wordModeLabel = settingsPanel.querySelector('label[for="vocab-learn-mode-word"]');
@@ -15924,14 +19174,23 @@ if (page === "learn-vocab") {
   setSidebarOpen(localStorage.getItem(VOCAB_SIDEBAR_KEY) !== "0");
   setSettingsOpen(false);
   render();
-  loadVocab((data) => {
-    if (Array.isArray(data)) loadLessons(data);
+  const beginLesson = () => {
+    if (loadScreen) loadScreen.classList.add("hidden");
     if (sentences) loadWordHelp();
     loaded = true;
     expState = loadExpState();
     syncSettingsInputs();
     if (!items.length) render();
     else if (!restoreSave()) restart();
+  };
+  if (loadLabel) loadLabel.textContent = getTranslation(planCodes.length ? "learn.planLoading" : "learn.loading");
+  setLoadProgress(0);
+  if (loadScreen) loadScreen.classList.remove("hidden");
+  (planCodes.length ? loadPlan() : loadSingle()).then(() => {
+    setLoadProgress(100);
+    beginLesson();
+  }).catch(() => {
+    beginLesson();
   });
 }
 
@@ -15963,6 +19222,7 @@ if (page === "kanji") {
   const setButtons = Array.from(document.querySelectorAll("[data-kanji-set]"));
   const starredToggle = document.getElementById("kanji-starred-toggle");
   const learnBtn = document.getElementById("kanji-learn");
+  const addKanjiBtn = document.getElementById("kanji-add");
   const sortBtn = document.getElementById("kanji-sort");
   const sortMenu = document.getElementById("kanji-sort-menu");
   const searchInput = document.getElementById("kanji-search");
@@ -16071,6 +19331,69 @@ if (page === "kanji") {
       label: firstGloss(c[5]),
     })),
   };
+
+  function kanjiCanEdit(item) {
+    if (!item) return false;
+    if (isAdminMode()) return true;
+    if (item.set === "radical") return aficHasLetters("X");
+    if (item.set === "chinese") return aficHasLetters("C", "E");
+    if (item.set === "japanese") return !!(item.custom && aficHasLetters("J", "E"));
+    return false;
+  }
+
+  function canAddKanji(setId) {
+    if (isAdminMode()) return setId === "chinese" || setId === "japanese";
+    if (setId === "chinese") return aficHasLetters("C", "E");
+    if (setId === "japanese") return aficHasLetters("J", "E");
+    return false;
+  }
+
+  function applyKanjiAfic(item) {
+    const over = readAficEdits().kanji[item.key] || {};
+    ["meaning", "readings", "reading", "variants", "kun", "on", "parts", "kunExamples", "onExamples"].forEach((field) => {
+      if (over[field]) item[field] = over[field];
+    });
+    if (over.meaning && (item.set !== "chinese" || item.custom)) item.label = firstGloss(over.meaning);
+    if (over.readings && item.set === "chinese" && !item.meaning) item.label = hanziGloss(over.readings);
+  }
+  ["radical", "chinese", "japanese"].forEach((setId) => itemsBySet[setId].forEach(applyKanjiAfic));
+
+  function makeCustomKanji(record) {
+    const set = record.set === "japanese" ? "japanese" : "chinese";
+    const order = itemsBySet[set].length;
+    const item = {
+      key: (set === "chinese" ? "C:" : "J:") + record.char,
+      set,
+      order,
+      char: record.char,
+      freq: 0,
+      freqKey: Infinity,
+      radical: 0,
+      strokes: 0,
+      parts: record.parts || "",
+      readings: record.readings || "",
+      meaning: record.definition || "",
+      label: firstGloss(record.definition || record.char),
+      custom: true,
+      lessonKey: 100000000 + order,
+    };
+    if (set === "japanese") {
+      item.grade = 0;
+      item.kun = "";
+      item.on = "";
+      item.kunExamples = "";
+      item.onExamples = "";
+    }
+    applyKanjiAfic(item);
+    return item;
+  }
+
+  (readAficEdits().kanjiAdded || []).forEach((record) => {
+    if (!record || !record.char || (record.set !== "chinese" && record.set !== "japanese")) return;
+    const key = (record.set === "chinese" ? "C:" : "J:") + record.char;
+    if (itemsBySet[record.set].some((item) => item.key === key || item.char === record.char)) return;
+    itemsBySet[record.set].push(makeCustomKanji(record));
+  });
 
   // Radical frequency ranks are set further down, once the "Used In" index exists.
   itemsBySet.radical.forEach((item) => {
@@ -16375,6 +19698,7 @@ if (page === "kanji") {
   const detailBody = document.getElementById("kanji-detail-body");
   const detailBack = document.getElementById("kanji-detail-back");
   const detailClose = document.getElementById("kanji-detail-close");
+  const detailEdit = document.getElementById("kanji-detail-edit");
   const detailStar = document.getElementById("kanji-detail-star");
   const detailPrev = document.getElementById("kanji-detail-prev");
   const detailNext = document.getElementById("kanji-detail-next");
@@ -16405,6 +19729,20 @@ if (page === "kanji") {
   }
 
   function usedInFor(item, sets) {
+    if (item.custom && item.parts) {
+      const seenChars = new Set();
+      const users = [];
+      (sets || relatedSets(item)).forEach((setId) => {
+        parseParts(item.parts).forEach((glyph) => {
+          (usedInIndex[setId].get(glyph) || []).forEach((user) => {
+            if (user === item || user.char === item.char || seenChars.has(user.char)) return;
+            seenChars.add(user.char);
+            users.push(user);
+          });
+        });
+      });
+      return users.sort((a, b) => orInfinity(a.freq) - orInfinity(b.freq) || a.order - b.order);
+    }
     const glyphs = item.set === "radical" ? item.aliases : [item.char];
     // Most characters are in both lists; when both are searched, each character is listed once.
     const seenChars = new Set();
@@ -16419,6 +19757,25 @@ if (page === "kanji") {
       });
     });
     return users.sort((a, b) => orInfinity(a.freq) - orInfinity(b.freq) || a.order - b.order);
+  }
+
+  function indexUsedIn(item) {
+    if (!item || !usedInIndex[item.set]) return;
+    new Set(parseParts(item.parts)).forEach((glyph) => {
+      if (!glyph || glyph === item.char) return;
+      if (!usedInIndex[item.set].has(glyph)) usedInIndex[item.set].set(glyph, []);
+      const list = usedInIndex[item.set].get(glyph);
+      if (!list.includes(item)) list.push(item);
+    });
+  }
+
+  function reindexUsedIn(item) {
+    if (!item || !usedInIndex[item.set]) return;
+    usedInIndex[item.set].forEach((list) => {
+      const at = list.indexOf(item);
+      if (at >= 0) list.splice(at, 1);
+    });
+    indexUsedIn(item);
   }
 
   // Radicals have no published frequency, so rank them by how many characters list them under "Used In"
@@ -16514,6 +19871,7 @@ if (page === "kanji") {
 
   function buildDetail(item, compact) {
     const t = (key) => getTranslation("kanji." + key);
+    const editing = !compact && detailEditing && kanjiCanEdit(item);
     const root = makeEl("div", "kanji-detail-content");
 
     const head = makeEl("div", "kanji-detail-head");
@@ -16521,10 +19879,13 @@ if (page === "kanji") {
     glyph.lang = glyphLang(item);
     if (!compact) glyph.id = "kanji-detail-glyph";
     const titles = makeEl("div", "kanji-detail-titles");
-    titles.append(
-      makeEl("div", "kanji-detail-meaning", item.set === "chinese" ? item.label : item.meaning),
-      makeEl("div", "kanji-detail-facts", factsLine(item))
-    );
+    const headerMeaning = makeEl("div", "kanji-detail-meaning", item.set === "chinese" ? item.label : item.meaning);
+    if (editing && (item.set !== "chinese" || item.custom)) {
+      editLine(headerMeaning, item.meaning || "", (next) => {
+        saveKanjiField("meaning", item.meaning || "", next, (saved) => applyField("meaning", saved));
+      });
+    }
+    titles.append(headerMeaning, makeEl("div", "kanji-detail-facts", factsLine(item)));
     // Golden boxes hide their counts, so the counts are always here as well.
     const { correct, wrong } = countsFor(item.key);
     const counts = makeEl("div", "kanji-box-count kanji-detail-count");
@@ -16551,16 +19912,22 @@ if (page === "kanji") {
     }
 
     const breakdown = makeSection(t("breakdown"));
+    const partSegments = String(item.parts || "").split("; ").map((part) => part.trim()).filter(Boolean);
     const parts = describeParts(item.parts);
     if (parts.length) {
       const row = makeEl("div", "kanji-part-row");
-      parts.forEach((part) => {
-        if (part.shape) row.append(makeChip(part.glyph, "", null, false));
-        else row.append(makeChip(part.glyph, part.name, itemForGlyph(part.glyph, item), !compact));
+      parts.forEach((part, index) => {
+        const chip = part.shape
+          ? makeChip(part.glyph, "", null, false)
+          : makeChip(part.glyph, part.name, itemForGlyph(part.glyph, item), !compact);
+        bindBreakdownEdit(chip, index, partSegments[index] || part.glyph);
+        row.append(chip);
       });
       breakdown.append(row);
     } else {
-      breakdown.append(makeEl("p", "kanji-detail-none", t("noBreakdown")));
+      const empty = makeEl("p", "kanji-detail-none", t("noBreakdown"));
+      bindBreakdownEdit(empty, 0, "");
+      breakdown.append(empty);
     }
     root.append(breakdown);
 
@@ -16592,34 +19959,122 @@ if (page === "kanji") {
 
     const info = makeSection(t("readingsExamples"));
     const list = makeEl("dl", "kanji-detail-info");
-    const addLine = (label, value) => {
-      if (!value) return;
-      list.append(makeEl("dt", "", label), makeEl("dd", "", value));
+    const saveKanjiField = (field, before, after, apply) => {
+      const store = readAficEdits();
+      if (!pushAficLog(store, "kanji", item.key, field, before, after)) {
+        showDetail(item);
+        return;
+      }
+      if (!store.kanji[item.key]) store.kanji[item.key] = {};
+      store.kanji[item.key][field] = aficClean(after);
+      writeAficEdits(store);
+      apply(aficClean(after));
+      const box = boxCache.get(item.key);
+      const labelEl = box && box.querySelector(".kanji-box-label");
+      if (labelEl) labelEl.textContent = item.label || "";
+      showDetail(item);
     };
-    const addList = (label, text) => {
+    function bindBreakdownEdit(chip, index, raw) {
+      if (!editing || !chip) return;
+      chip.classList.add("afic-edit-line");
+      chip.title = "Double right-click to edit this piece";
+      let last = 0;
+      chip.addEventListener("contextmenu", (e) => {
+        const now = Date.now();
+        if (now - last < 500) {
+          e.preventDefault();
+          e.stopPropagation();
+          last = 0;
+          aficReplaceWithInput(chip, raw, (next) => {
+            if (next == null) {
+              showDetail(item);
+              return;
+            }
+            const segments = String(item.parts || "").split("; ").map((part) => part.trim()).filter(Boolean);
+            const cleaned = aficClean(next);
+            if (!cleaned) {
+              if (segments[index] != null) segments.splice(index, 1);
+            } else if (index >= segments.length) segments.push(cleaned);
+            else segments[index] = cleaned;
+            const joined = segments.join("; ");
+            if (joined === String(item.parts || "")) {
+              showDetail(item);
+              return;
+            }
+            saveKanjiField("parts", item.parts || "", joined, (saved) => {
+              item.parts = saved;
+              reindexUsedIn(item);
+            });
+          }, true);
+          return;
+        }
+        last = now;
+      });
+    }
+    function editLine(host, text, onCommit) {
+      host.classList.add("afic-edit-line");
+      host.title = "Click to edit";
+      host.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (host.querySelector("input, textarea")) return;
+        aficReplaceWithInput(host, text, (next) => {
+          if (next == null || aficClean(next) === aficClean(text)) showDetail(item);
+          else onCommit(next);
+        }, true);
+      });
+    }
+    const applyField = (field, saved) => {
+      item[field] = saved;
+      if (field === "meaning" || (field === "readings" && item.custom)) item.label = firstGloss(item.meaning || saved);
+      else if (field === "readings" && item.set === "chinese") item.label = hanziGloss(saved);
+    };
+    const addLine = (label, value, field) => {
+      if (!value && !field) return;
+      const dd = makeEl("dd", "", value || "");
+      if (field) editLine(dd, value || "", (next) => saveKanjiField(field, value || "", next, (saved) => applyField(field, saved)));
+      list.append(makeEl("dt", "", label), dd);
+    };
+    const addList = (label, text, field) => {
       let entries = String(text || "").split(" | ").filter(Boolean);
+      if (!entries.length && field) entries = [""];
       if (!entries.length) return;
       const more = compact ? entries.length - KANJI_PEEK_LIST_LIMIT : 0;
       if (more > 0) entries = entries.slice(0, KANJI_PEEK_LIST_LIMIT);
       const ul = makeEl("ul");
-      entries.forEach((entry) => ul.append(makeEl("li", "", entry)));
+      entries.forEach((entry, index) => {
+        const li = makeEl("li", "", entry);
+        if (field) {
+          editLine(li, entry, (next) => {
+            const source = String(item[field] || text || "");
+            const all = source.split(" | ");
+            const at = all.indexOf(entry);
+            const joined = all.map((line, lineIndex) => lineIndex === (at < 0 ? index : at) ? aficClean(next) : line).join(" | ");
+            saveKanjiField(field, source, joined, (saved) => applyField(field, saved));
+          });
+        }
+        ul.append(li);
+      });
       if (more > 0) ul.append(makeEl("li", "kanji-detail-more", formatTranslation("kanji.more", { count: more })));
       const dd = makeEl("dd");
       dd.append(ul);
       list.append(makeEl("dt", "", label), dd);
     };
     if (item.set === "radical") {
-      addLine(t("meaning"), item.meaning);
-      addLine(t("reading"), item.reading);
-      addLine(t("variants"), item.variants);
+      addLine(t("meaning"), item.meaning, editing ? "meaning" : "");
+      addLine(t("reading"), item.reading, editing && isAdminMode() ? "reading" : "");
+      addLine(t("variants"), item.variants, editing && isAdminMode() ? "variants" : "");
     } else if (item.set === "chinese") {
-      addList(t("readings"), item.readings);
+      addLine(t("meaning"), item.meaning, editing && item.meaning ? "meaning" : "");
+      addList(t("readings"), item.readings, editing ? "readings" : "");
+    } else if (item.readings && !item.kun && !item.on && !item.kunExamples && !item.onExamples) {
+      addLine(t("meaning"), item.meaning, editing ? "meaning" : "");
+      addList(t("readings"), item.readings, editing ? "readings" : "");
     } else {
-      addLine(t("meaning"), item.meaning);
-      addLine(t("kunyomi"), item.kun);
-      addLine(t("onyomi"), item.on);
-      addList(t("examplesKun"), item.kunExamples);
-      addList(t("examplesOn"), item.onExamples);
+      addLine(t("meaning"), item.meaning, editing ? "meaning" : "");
+      addLine(t("kunyomi"), item.kun, editing ? "kun" : "");
+      addLine(t("onyomi"), item.on, editing ? "on" : "");
+      addList(t("examplesKun"), item.kunExamples, editing ? "kunExamples" : "");
+      addList(t("examplesOn"), item.onExamples, editing ? "onExamples" : "");
     }
     if (list.childElementCount) info.append(list);
     else info.append(makeEl("p", "kanji-detail-none", t("nothingYet")));
@@ -16629,6 +20084,7 @@ if (page === "kanji") {
   }
 
   let detailItem = null;
+  let detailEditing = false;
   let detailStarChanged = false;
   const detailHistory = [];
   // Prev / Next walk the grid as it was when the window opened; breakdown and Used In
@@ -16669,6 +20125,12 @@ if (page === "kanji") {
     detailBody.textContent = "";
     detailBody.append(buildDetail(item, false));
     paintStar(detailStar, starred.has(item.key));
+    if (detailEdit) {
+      const canEdit = kanjiCanEdit(item);
+      detailEdit.classList.toggle("hidden", !canEdit);
+      detailEdit.classList.toggle("is-active", canEdit && detailEditing);
+      detailEdit.title = canEdit && detailEditing ? "Left-click text to edit it. Double right-click a breakdown piece to change it." : "Edit";
+    }
     detailBack.classList.toggle("hidden", !detailHistory.length);
     syncDetailNav();
     detailBody.scrollTop = 0;
@@ -16718,6 +20180,7 @@ if (page === "kanji") {
     if (detailModal.classList.contains("hidden")) return;
     detailModal.classList.add("hidden");
     detailItem = null;
+    detailEditing = false;
     detailHistory.length = 0;
     detailList = [];
     detailListPos = new Map();
@@ -16739,6 +20202,13 @@ if (page === "kanji") {
     if (previous) showDetail(previous);
   });
   detailClose.addEventListener("click", closeDetail);
+  if (detailEdit) {
+    detailEdit.addEventListener("click", () => {
+      if (!detailItem || !kanjiCanEdit(detailItem)) return;
+      detailEditing = !detailEditing;
+      showDetail(detailItem);
+    });
+  }
   detailPrev.addEventListener("click", () => stepDetail(-1));
   detailNext.addEventListener("click", () => stepDetail(1));
   detailStar.addEventListener("click", () => {
@@ -16926,6 +20396,7 @@ if (page === "kanji") {
     starredToggle.classList.toggle("is-active", kanjiState.starredOnly);
     starredToggle.setAttribute("aria-pressed", kanjiState.starredOnly ? "true" : "false");
     sortBtn.textContent = sortLabel(kanjiState.sort);
+    if (addKanjiBtn) addKanjiBtn.classList.toggle("hidden", !canAddKanji(kanjiState.set));
     sortMenu.querySelectorAll(".kanji-sort-option").forEach((opt) => {
       opt.setAttribute("aria-checked", opt.dataset.sort === kanjiState.sort ? "true" : "false");
     });
@@ -16972,6 +20443,118 @@ if (page === "kanji") {
     syncControls();
     renderKanjiGrid();
   });
+
+  function openAddKanji() {
+    if (!canAddKanji(kanjiState.set)) return;
+    const setId = kanjiState.set;
+    let box = document.getElementById("kanji-add-box");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "kanji-add-box";
+      box.className = "word-context-box hidden";
+      box.innerHTML = '<div class="word-context-content kanji-add-card"><h2 id="kanji-add-title">Add Kanji</h2><label>Kanji<input id="kanji-add-char" type="text" lang="zh" /></label><label>Definition<textarea id="kanji-add-definition" rows="2"></textarea></label><label>Breakdown<input id="kanji-add-part-search" type="search" placeholder="Search radicals" /></label><div id="kanji-add-selected" class="kanji-part-row"></div><div id="kanji-add-parts" class="kanji-add-parts"></div><label>Reading &amp; Examples<textarea id="kanji-add-readings" rows="3"></textarea></label><div class="word-context-actions"><button type="button" id="kanji-add-save">Save</button><button type="button" id="kanji-add-close">Close</button></div></div>';
+      document.body.appendChild(box);
+      box.addEventListener("click", (e) => {
+        if (e.target === box) box.classList.add("hidden");
+      });
+      box.querySelector("#kanji-add-close").addEventListener("click", () => box.classList.add("hidden"));
+    }
+    const selected = [];
+    const charInput = box.querySelector("#kanji-add-char");
+    const definitionInput = box.querySelector("#kanji-add-definition");
+    const readingsInput = box.querySelector("#kanji-add-readings");
+    const searchInput = box.querySelector("#kanji-add-part-search");
+    const selectedRow = box.querySelector("#kanji-add-selected");
+    const partsBox = box.querySelector("#kanji-add-parts");
+    charInput.value = "";
+    definitionInput.value = "";
+    readingsInput.value = "";
+    searchInput.value = "";
+    box.querySelector("#kanji-add-title").textContent = setId === "japanese" ? "Add Japanese Kanji" : "Add Chinese Kanji";
+    const paint = () => {
+      selectedRow.textContent = "";
+      selected.forEach((glyph) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "transfer-lang-chip";
+        chip.textContent = glyph;
+        chip.title = "Remove";
+        chip.addEventListener("click", () => {
+          const at = selected.indexOf(glyph);
+          if (at >= 0) selected.splice(at, 1);
+          paint();
+        });
+        selectedRow.append(chip);
+      });
+      const query = searchInput.value.trim();
+      partsBox.textContent = "";
+      itemsBySet.radical.forEach((part) => {
+        const hay = (part.char + " " + (part.meaning || "") + " " + (part.label || "")).toLowerCase();
+        if (query && !hay.includes(query.toLowerCase())) return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "kanji-add-part" + (selected.includes(part.char) ? " is-selected" : "");
+        button.textContent = part.char;
+        button.title = part.meaning || part.label || part.char;
+        button.addEventListener("click", () => {
+          const at = selected.indexOf(part.char);
+          if (at >= 0) selected.splice(at, 1);
+          else selected.push(part.char);
+          paint();
+        });
+        partsBox.append(button);
+      });
+    };
+    searchInput.oninput = paint;
+    box.querySelector("#kanji-add-save").onclick = () => {
+      const char = charInput.value.trim();
+      if (!char) {
+        charInput.focus();
+        return;
+      }
+      const key = (setId === "chinese" ? "C:" : "J:") + char;
+      if (itemByKey.has(key)) {
+        alert("This kanji is already in the list.");
+        return;
+      }
+      const parts = selected.map((glyph) => {
+        const part = glyphIndex.radical.get(glyph);
+        const name = part ? (part.label || part.meaning || "") : "";
+        return name ? glyph + " (" + name + ")" : glyph;
+      }).join("; ");
+      const record = {
+        set: setId,
+        char,
+        definition: definitionInput.value.trim(),
+        parts,
+        readings: readingsInput.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" | "),
+      };
+      const item = makeCustomKanji(record);
+      itemsBySet[setId].push(item);
+      itemByKey.set(item.key, item);
+      if (!glyphIndex[setId].has(item.char)) glyphIndex[setId].set(item.char, item);
+      indexUsedIn(item);
+      const store = readAficEdits();
+      if (!Array.isArray(store.kanjiAdded)) store.kanjiAdded = [];
+      store.kanjiAdded.push(record);
+      pushAficLog(store, "kanji-add", item.key, "add", "", JSON.stringify(record));
+      writeAficEdits(store);
+      box.classList.add("hidden");
+      if (kanjiState.starredOnly) {
+        kanjiState.starredOnly = false;
+        saveKanjiState();
+      }
+      syncControls();
+      renderKanjiGrid();
+      openDetail(item);
+    };
+    paint();
+    box.classList.remove("hidden");
+    charInput.focus();
+  }
+
+  if (addKanjiBtn) addKanjiBtn.addEventListener("click", openAddKanji);
+  document.addEventListener("adminmodechange", () => syncControls());
 
   learnBtn.addEventListener("click", () => {
     const items = getVisibleItems().map((item) => [item.key, item.char, item.label]);
@@ -17764,6 +21347,7 @@ if (page === "kanji-learn") {
       button.type = "button";
       button.disabled = round.answered || round.phase !== 1;
       if (round.choice === choice) button.classList.add("is-active");
+      appendOxHint(button, choice);
       button.addEventListener("click", () => judge(choice));
       judges.append(button);
     });
@@ -17771,10 +21355,11 @@ if (page === "kanji-learn") {
 
     if (round.phase !== 2) return;
     const list = el("div", "kanji-play-options");
-    round.options.forEach((definition) => {
+    round.options.forEach((definition, index) => {
       const text = definition.label;
       const option = el("button", "kanji-play-option");
       fillDefinition(option, definition, round.answered);
+      appendOxHint(option, "x" + (index + 1));
       option.type = "button";
       option.disabled = round.answered;
       if (round.answered && text === label) {
@@ -17859,6 +21444,24 @@ if (page === "kanji-learn") {
       el("span", "", formatTranslation("kanji.playAccuracy", { n: accuracyText() })),
       el("span", "", formatTranslation("kanji.cardStreak", { n: countsFor(info.key).run, total: settings.goldenStreak }))
     );
+    const starBtn = el("button", "learn-play-star", "");
+    starBtn.type = "button";
+    starBtn.setAttribute("aria-label", getTranslation("kanji.starredList"));
+    const paintKanjiStar = () => {
+      const on = new Set(readJson(KANJI_STARRED_KEY, [])).has(info.key);
+      starBtn.textContent = on ? "★" : "☆";
+      starBtn.classList.toggle("is-on", on);
+    };
+    paintKanjiStar();
+    starBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const starred = new Set(readJson(KANJI_STARRED_KEY, []));
+      if (starred.has(info.key)) starred.delete(info.key);
+      else starred.add(info.key);
+      localStorage.setItem(KANJI_STARRED_KEY, JSON.stringify([...starred]));
+      paintKanjiStar();
+    });
+    meta.append(starBtn);
 
     const question = el("div", "kanji-play-question");
     if (card.mode === "kanji") {
@@ -17934,8 +21537,14 @@ if (page === "kanji-learn") {
   // An answered card moves on with a click anywhere except on links and other controls. This runs in the
   // capture phase and stops the click, so it never also lands on a button of the next card.
   document.addEventListener("click", (e) => {
+    if (oxBindClickGuard) {
+      oxBindClickGuard = false;
+      return;
+    }
+    if (oxKeybindDialogOpen()) return;
     if (!play || !play.round || !play.round.answered || e.button !== 0) return;
     if (!settingsPanel.classList.contains("hidden")) return;
+    if (e.target.closest && e.target.closest(".navbar, .kanji-learn-bar, .kanji-learn-sidebar, .kanji-learn-settings-panel, .learn-play-star")) return;
     if (!e.target.closest(".kanji-play") && e.target.closest("a, button, input, select, textarea, label")) return;
     e.preventDefault();
     e.stopPropagation();
@@ -17943,20 +21552,36 @@ if (page === "kanji-learn") {
   }, true);
 
   document.addEventListener("keydown", (e) => {
+    if (oxKeybindListening || oxKeybindDialogOpen()) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable='true']")) return;
+    if (e.repeat) return;
+    if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable='true'], .kanji-learn-settings-panel")) return;
     const round = play && play.round;
-    if (round && round.answered && (e.key === "Enter" || e.key === " ")) {
-      if (e.repeat || (e.target.closest && e.target.closest("a, button"))) return;
+    if (round && round.answered && !settingsPanel.classList.contains("hidden")) return;
+    if (round && round.answered && e.key !== "Shift" && e.key !== "Control" && e.key !== "Alt" && e.key !== "Meta" && e.key !== "CapsLock") {
+      if (e.target.closest && e.target.closest("a, button") && (e.key === "Enter" || e.key === " ")) return;
       e.preventDefault();
+      e.stopPropagation();
       nextCard();
       return;
     }
-    if (!round || round.answered || round.card.mode !== "definition" || round.phase !== 1) return;
-    const key = e.key.toLowerCase();
-    if (key !== "o" && key !== "x") return;
+    runOxKeybind(e, e.code, round, judge, pickOption);
+  });
+
+  document.addEventListener("mousedown", (e) => {
+    if (oxKeybindListening || oxKeybindDialogOpen()) return;
+    if (e.target.closest && e.target.closest("a, button, input, select, textarea, label, .navbar, .kanji-learn-settings-panel, .ox-keybind-dialog")) return;
+    const round = play && play.round;
+    if (!round || round.answered || round.card.mode !== "definition") return;
+    runOxKeybind(e, "Mouse" + e.button, round, judge, pickOption);
+  }, true);
+
+  document.addEventListener("contextmenu", (e) => {
+    if (!oxKeybindAction("Mouse2")) return;
+    const round = play && play.round;
+    if (!round || round.answered || round.card.mode !== "definition") return;
+    if (e.target.closest && e.target.closest("a, button, input, select, textarea, .ox-keybind-dialog")) return;
     e.preventDefault();
-    judge(key);
   });
 
   /* ---------- sidebar ---------- */

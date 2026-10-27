@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kanji Builder</title>
-  <link rel="stylesheet" href="style.css?v=0.7" />
-  <script src="translations.js?v=0.7"></script>
-  <script src="learn/data/ready.js?v=0.7"></script>
-  <script defer src="script.js?v=0.7"></script>
+  <link rel="stylesheet" href="style.css?v=0.21" />
+  <script src="translations.js?v=0.12"></script>
+  <script src="NewLearn/data/ready.js?v=0.10"></script>
+  <script defer src="script.js?v=0.23"></script>
 </head>
 <body data-page="learn">
   <header class="navbar">
@@ -45,7 +45,7 @@
   </header>
 
   <main>
-    <span class="app-version">v0.7a</span>
+    <span class="app-version">v0.7b</span>
     <h1 data-i18n="nav.learn">Learn</h1>
     <section class="learn-chart-section">
       <div class="learn-chart-wrap">
@@ -54,8 +54,14 @@
           <tbody></tbody>
         </table>
       </div>
-      <p class="learn-chart-note" data-i18n="learn.chartNote">Left-click a box to open just that area. Right-click boxes to select several at once. Hold right-click on a box or a language to see its stats.</p>
-      <p class="learn-chart-note" data-i18n="learn.notReadyNote">✓ has content. ✗ still needs content and is planned for the next update (v0.7b).</p>
+      <aside id="learn-plan" class="learn-plan">
+        <h2 data-i18n="learn.planTitle">Lesson plan</h2>
+        <p id="learn-plan-empty" class="learn-plan-empty" data-i18n="learn.planEmpty">Right-click a box to add it.</p>
+        <ul id="learn-plan-list" class="learn-plan-list"></ul>
+        <p id="learn-plan-note" class="learn-plan-note" hidden></p>
+        <button type="button" id="learn-plan-start" class="transfer-lang-chip learn-plan-start" hidden data-i18n="learn.planStart">Start</button>
+      </aside>
+      <p class="learn-chart-note" data-i18n="learn.chartNote">Left-click a box to browse its letters, words, or sentences. Right-click a box to add it to the lesson plan. Hold right-click to see its stats.</p>
     </section>
   </main>
 </body>

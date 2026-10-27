@@ -236,7 +236,7 @@
       if (!entry || entry.isCore) return;
       if (entry.sourceWorldLine && exportedWorldKeys.has(entry.sourceWorldLine)) return;
       const origin = entry.originLanguage || entry.translationSource || "en";
-      const translated = entry.translationLanguage || "en";
+      const translated = entry.translationLanguage === "unknown" ? "" : (entry.translationLanguage || "en");
       const langs = new Set([origin, translated].concat(Object.keys(entry.translations || {})));
       const allSelected = !selectedLangs || !selectedLangs.length || selectedLangs.indexOf("all") >= 0;
       if (!allSelected) {
