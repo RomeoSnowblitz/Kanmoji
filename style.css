@@ -5566,6 +5566,12 @@ a.kanji-chip {
   align-self: center;
   font-size: 1.4rem;
 }
+.vocab-learn-load-time {
+  margin: 0 0 0 0.75rem;
+  align-self: center;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
 
 .vocab-play-word {
   font-size: 2.6rem;
@@ -5604,17 +5610,34 @@ a.kanji-chip {
   line-height: 1.35;
 }
 
-/* Sentences are long, so the hidden sentence sits above its definition instead of beside it. */
+/* Sentences and vocabulary put the hidden answer on its own line above the definition. */
 .kanji-play.is-sentence .kanji-play-box,
-.kanji-play.is-sentence .kanji-play-option {
+.kanji-play.is-sentence .kanji-play-option,
+.kanji-play.is-vocab .kanji-play-box,
+.kanji-play.is-vocab .kanji-play-option {
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 0.35rem;
 }
 
+.kanji-play.is-sentence .kanji-play-box .kanji-play-def,
+.kanji-play.is-vocab .kanji-play-box .kanji-play-def,
+.kanji-play.is-sentence .vocab-play-reveal,
+.kanji-play.is-vocab .vocab-play-reveal {
+  width: 100%;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.kanji-play.is-vocab .kanji-play-box .kanji-play-def {
+  font-size: 2.6rem;
+}
+
+.kanji-play.is-sentence .kanji-play-box .kanji-play-def,
 .kanji-play.is-sentence .vocab-play-reveal {
+  font-size: 1.7rem;
   line-height: 1.35;
-  text-align: left;
 }
 
 /* Right click a word in a sentence for its translation. */
@@ -5681,7 +5704,8 @@ a.kanji-chip {
   font-size: 1.15rem;
 }
 
-#vocab-learn-peek {
+#vocab-learn-peek,
+#kanji-learn-peek {
   overflow-y: auto;
 }
 
@@ -5970,7 +5994,8 @@ body.ui-accent-gradient.ui-accent-scope-screen .kanji-search {
   display: none;
 }
 
-.kanji-learn-filter.is-active {
+.kanji-learn-filter.is-active,
+.kanji-learn-filter.is-custom {
   background: var(--accent-color);
   color: #fff;
 }
@@ -6170,6 +6195,10 @@ body.ui-accent-gradient.ui-accent-scope-screen .kanji-search {
   text-align: center;
 }
 
+.kanji-play-question.is-correct {
+  border: 2px solid #22c55e;
+}
+
 .kanji-play-glyph {
   font-size: 4.5rem;
   line-height: 1.15;
@@ -6233,13 +6262,40 @@ body.ui-accent-gradient.ui-accent-scope-screen .kanji-search {
 .kanji-play-actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
+  align-items: stretch;
+  gap: 0.7rem 0.9rem;
 }
 
 .kanji-play-judge {
-  min-width: 4.5rem;
-  font-size: 1.2rem;
+  width: max-content;
+  min-width: 0;
+  font-size: 1.25rem;
+  line-height: 1.1;
+}
+
+.kanji-play-judge:has(.ox-key-hint) {
+  display: inline-grid;
+  grid-template-columns: 1.1rem auto;
+  align-content: space-between;
+  justify-items: end;
+  align-self: stretch;
+  padding: 0.4rem 0.38rem 0.22rem 0.55rem;
+}
+
+.kanji-play-judge .ox-judge-word {
+  grid-column: 1 / -1;
+  justify-self: center;
+  padding: 0 0.15rem 0.28rem;
+  text-align: center;
+}
+
+.kanji-play-judge .ox-key-hint {
+  grid-column: 2;
+  justify-self: end;
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .kanji-play-options {
@@ -8034,4 +8090,614 @@ body.ui-accent-gradient #draw-canvas
   max-width: 8rem;
   font-size: 0.75rem;
   opacity: 0.75;
+}
+
+.entry.entry-concept {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: stretch;
+  column-gap: 0.85rem;
+  row-gap: 0.2rem;
+}
+
+.entry.entry-concept .concept-kanmoji {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  box-sizing: border-box;
+  width: auto;
+  height: 100%;
+  aspect-ratio: 1;
+  min-width: 4.6rem;
+  min-height: 4.6rem;
+  border: 1px dashed color-mix(in srgb, var(--accent-color) 45%, transparent);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.entry.entry-concept .concept-kanmoji img,
+.entry.entry-concept .concept-kanmoji .symbol-mask {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.entry.entry-concept .concept-line {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.35rem 1rem;
+  min-width: 0;
+}
+
+.entry.entry-concept .concept-line-words { grid-row: 1; }
+.entry.entry-concept .concept-line-meta { grid-row: 2; }
+
+.concept-organize-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  padding: 0.28rem 0.15rem;
+}
+
+.concept-organize-row > span {
+  min-width: 6.5rem;
+}
+
+.concept-organize-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+@media (max-width: 760px) {
+  .entry.entry-concept {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 420px) {
+  .entry.entry-concept {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+}
+
+.entry.entry-concept {
+  position: relative;
+}
+
+.entry.entry-concept .concept-kanmoji {
+  padding: 0;
+  appearance: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.entry.entry-concept .concept-kanmoji.concept-kanmoji-multi {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 1fr;
+}
+
+.entry.entry-concept.is-peeked {
+  outline: 3px solid var(--accent-color);
+  outline-offset: -3px;
+}
+
+.concept-label-dock {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.concept-label-tray {
+  display: flex;
+  width: 0;
+  overflow: hidden;
+  transition: width 0.18s ease;
+}
+
+.concept-label-dock.is-open .concept-label-tray {
+  width: 4.5rem;
+}
+
+.concept-label-handle {
+  width: 18px;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  background: var(--accent-color);
+}
+
+.concept-label-dock.is-green .concept-label-handle { background: #43a047; }
+.concept-label-dock.is-yellow .concept-label-handle { background: #f1c40f; }
+.concept-label-dock.is-red .concept-label-handle { background: #e53935; }
+
+.concept-label-swatch {
+  width: 1.5rem;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.concept-label-green { background: #43a047; }
+.concept-label-yellow { background: #f1c40f; }
+.concept-label-red { background: #e53935; }
+
+.concept-label-swatch.is-selected {
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+}
+
+#concept-detail-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.concept-detail-kanmoji {
+  width: 7.5rem;
+  height: 7.5rem;
+  margin: 0 0 0.9rem;
+  padding: 0;
+  appearance: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border: 1px dashed color-mix(in srgb, var(--accent-color) 45%, transparent);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.concept-detail-kanmoji.concept-kanmoji-multi {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 1fr;
+}
+
+.concept-detail-kanmoji img,
+.concept-detail-kanmoji .symbol-mask {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.concept-detail-grid {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.45rem 0.7rem;
+  align-items: center;
+}
+
+.concept-detail-span {
+  grid-column: 2;
+}
+
+.concept-detail-definition {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 1rem;
+}
+
+.concept-detail-definition p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.concept-detail-id {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.concept-detail-input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+.concept-peek-word {
+  font-size: 1.35rem;
+  font-weight: 650;
+}
+
+.concept-peek-lines,
+.concept-peek-meta {
+  margin-top: 0.45rem;
+  line-height: 1.45;
+}
+
+.concept-kanmoji-editor {
+  width: min(860px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+
+.concept-kanmoji-current {
+  display: flex;
+  gap: 0.4rem;
+  min-height: 4.2rem;
+  margin-bottom: 0.6rem;
+}
+
+.concept-kanmoji-chip,
+.concept-kanmoji-pick {
+  border: 1px solid color-mix(in srgb, var(--accent-color) 45%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.concept-kanmoji-chip {
+  width: 4.2rem;
+  height: 4.2rem;
+  padding: 0.2rem;
+}
+
+.concept-kanmoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr));
+  gap: 0.4rem;
+}
+
+.concept-kanmoji-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 5.4rem;
+  padding: 0.3rem;
+  font-size: 0.72rem;
+}
+
+.concept-kanmoji-pick img,
+.concept-kanmoji-pick .symbol-mask,
+.concept-kanmoji-chip img,
+.concept-kanmoji-chip .symbol-mask {
+  width: 2.6rem;
+  height: 2.6rem;
+}
+
+.concept-kanmoji-pick.is-selected {
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+}
+
+.create-concept-info:not(.hidden) {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.create-concept-info p {
+  margin: 0;
+}
+
+.create-word-field input[readonly] {
+  pointer-events: none;
+}
+
+.custom-star-menu,
+.custom-status-menu {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: min(22rem, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  padding: 0.45rem;
+  overflow: hidden;
+  background: var(--card-bg);
+  color: var(--text-color);
+  border: 1px solid color-mix(in srgb, var(--text-color) 18%, transparent);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px color-mix(in srgb, #000 28%, transparent);
+}
+
+.custom-star-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-height: 0;
+  overflow: auto;
+}
+
+.custom-star-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.custom-star-mark,
+.custom-star-trash,
+.custom-star-create,
+.custom-star-close,
+.custom-status-menu button {
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent-color) 14%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+
+.custom-star-mark,
+.custom-star-trash {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.custom-star-mark.is-on {
+  background: var(--accent-color);
+  color: #fff;
+}
+
+.custom-star-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.custom-star-name input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.custom-star-create,
+.custom-star-close,
+.custom-status-menu button {
+  padding: 0.4rem 0.65rem;
+  text-align: left;
+}
+
+.kanji-learn-lessons .custom-lesson-row {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.kanji-learn-lessons .custom-lesson-row > button[data-custom] {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.kanji-learn-lessons .custom-lesson-trash {
+  flex: none;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  text-align: center;
+}
+
+
+.learn-kanmoji-row,
+.learn-kanmoji-stack {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 0.35rem 0.55rem;
+  max-width: 100%;
+  vertical-align: bottom;
+}
+.learn-kanmoji-stack {
+  flex-direction: column;
+  align-items: center;
+}
+.learn-kanmoji-row .write-token-caption,
+.learn-kanmoji-stack .write-token-caption {
+  font-size: inherit;
+  color: var(--accent-color);
+}
+.learn-kanmoji-token {
+  font: inherit;
+  cursor: pointer;
+}
+.learn-kanmoji-picker .concept-kanmoji-grid,
+.learn-kanmoji-chooser {
+  min-height: 0;
+  overflow: auto;
+}
+button.write-compact-stamp.learn-kanmoji-box {
+  border: 2px solid var(--accent-color);
+  box-shadow: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  color: inherit;
+}
+body.ui-accent-gradient button.learn-kanmoji-box {
+  border: 2px solid var(--accent-color) !important;
+  background: transparent !important;
+  background-image: none !important;
+}
+body.ui-accent-gradient button.learn-kanmoji-box::before {
+  display: none;
+}
+.learn-kanmoji-picker .word-context-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(1280px, 98vw);
+  max-width: 98vw;
+  max-height: 90vh;
+  overflow: hidden;
+}
+.learn-kanmoji-picker .learn-kanmoji-x {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.45rem;
+  z-index: 2;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  border: none !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none;
+  color: var(--text-color);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.learn-kanmoji-picker .learn-kanmoji-x::before,
+.learn-kanmoji-picker .learn-kanmoji-x::after {
+  display: none !important;
+}
+.learn-kanmoji-picker .learn-kanmoji-x:hover {
+  color: var(--accent-color);
+}
+.learn-kanmoji-chooser {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.learn-kanmoji-chooser .symbol-grid {
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  width: 100%;
+}
+.learn-kanmoji-chooser .symbol-box .symbol-face > img,
+.learn-kanmoji-chooser .symbol-box .symbol-face > .symbol-mask {
+  width: 64px;
+  max-width: none;
+  height: 64px;
+  margin: 0 0 0.25rem;
+}
+.learn-kanmoji-picker button.symbol-zero-hit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  border: 2px solid transparent !important;
+  border-radius: 4px;
+  background: transparent !important;
+  background-image: none !important;
+  background-clip: border-box !important;
+  -webkit-background-clip: border-box !important;
+  box-shadow: none !important;
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+  line-height: 0;
+}
+.learn-kanmoji-picker button.symbol-zero-hit::before,
+.learn-kanmoji-picker button.symbol-zero-hit::after {
+  display: none !important;
+  content: none !important;
+}
+.learn-kanmoji-picker button.symbol-zero-hit:hover,
+.learn-kanmoji-picker button.symbol-zero-hit:focus-visible {
+  border-color: var(--accent-color) !important;
+  background: transparent !important;
+  background-image: none !important;
+}
+.learn-kanmoji-chooser .symbol-zero-hit > .symbol-mask,
+.learn-kanmoji-chooser .symbol-zero-mark > .symbol-mask,
+.learn-kanmoji-chooser .symbol-zero-hit .symbol-tint-img,
+.learn-kanmoji-chooser .symbol-zero-mark .symbol-tint-img,
+.learn-kanmoji-picker .concept-kanmoji-chip .symbol-zero-hit > .symbol-mask,
+.learn-kanmoji-picker .concept-kanmoji-chip .symbol-zero-mark > .symbol-mask,
+.learn-kanmoji-picker .concept-kanmoji-chip .symbol-zero-hit .symbol-tint-img,
+.learn-kanmoji-picker .concept-kanmoji-chip .symbol-zero-mark .symbol-tint-img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+}
+.learn-kanmoji-picker .concept-kanmoji-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 72px;
+  height: 72px;
+  padding: 0.25rem;
+}
+.learn-kanmoji-picker .concept-kanmoji-chip .symbol-face {
+  width: 64px;
+  height: 64px;
+  margin: 0;
+}
+.learn-kanmoji-picker .concept-kanmoji-chip .symbol-face > img,
+.learn-kanmoji-picker .concept-kanmoji-chip .symbol-face > .symbol-mask {
+  width: 64px;
+  height: 64px;
+  max-width: none;
+  margin: 0;
+}
+.learn-kanmoji-actions {
+  margin: 0 2rem 0.7rem 0;
+}
+.learn-kanmoji-info {
+  margin: 0 0 0.7rem;
+  line-height: 1.4;
+}
+.learn-kanmoji-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem 0.75rem;
+}
+.learn-kanmoji-pos {
+  flex: none;
+  font-weight: 700;
+}
+.learn-kanmoji-def {
+  min-width: 0;
+}
+.learn-kanmoji-langs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  column-gap: 1.25rem;
+  row-gap: 0.15rem;
+  margin-top: 0.35rem;
+}
+.learn-kanmoji-lang {
+  display: grid;
+  grid-template-columns: 6.6rem minmax(0, 1fr);
+  column-gap: 0.4rem;
+  align-items: baseline;
+}
+.learn-kanmoji-lang-name {
+  font-weight: 700;
+}
+.info-drawn-by {
+  margin: 0.25rem 0 0.55rem;
+}
+.learn-kanmoji-search {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--accent-color);
+  border-radius: 6px;
+  background: var(--bg-color);
+  color: var(--text-color);
 }

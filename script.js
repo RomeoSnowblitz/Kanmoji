@@ -34,6 +34,183 @@ function setStoredSymbolViewMode(mode) {
   localStorage.setItem(SYMBOL_VIEW_MODE_KEY, mode === "key" ? "key" : "manual");
 }
 
+// One bank per language. A lesson pair is built from the learned list and the UI list, then the banks
+// can be dropped. Pair scripts copied every line into every direction and made NewLearn about 3.4 GB.
+const LEARN_CODE_LETTER = { zh: "C", en: "E", fr: "F", de: "G", it: "I", ja: "J", ko: "K", pt: "P", ru: "R", es: "S" };
+const LEARN_BANK_SIZE = { vocab: 25, vocabulary: 25, sentence: 40 };
+const learnBanks = new Map();
+
+function firstLearnLink(packed, letter) {
+  if (!packed || !letter) return 0;
+  let i = 0;
+  while (i < packed.length) {
+    if (packed[i] === letter) {
+      let n = 0;
+      let j = i + 1;
+      let any = false;
+      while (j < packed.length && packed[j] >= "0" && packed[j] <= "9") {
+        any = true;
+        n = n * 10 + (packed.charCodeAt(j) - 48);
+        j += 1;
+      }
+      if (any) return n;
+    }
+    const tab = packed.indexOf("\t", i);
+    if (tab < 0) return 0;
+    i = tab + 1;
+  }
+  return 0;
+}
+
+function learnLessonName(text) {
+  const name = String(text || "").replace(/\s+/g, " ").trim();
+  return name.length > 36 ? name.slice(0, 35) + "..." : name;
+}
+
+// The first copy of a text keeps prefix+text, so saved progress still matches.
+// A later line with the same text and a different translation gets its own card.
+function learnStudyKey(prefix, text, seen) {
+  let key = prefix + text;
+  if (seen.has(key)) {
+    let n = 2;
+    while (seen.has(prefix + text + "\u001e" + n)) n += 1;
+    key = prefix + text + "\u001e" + n;
+  }
+  seen.add(key);
+  return key;
+}
+
+function parseLearnBank(lines) {
+  return new Promise((resolve) => {
+    const texts = new Array(lines.length);
+    const ids = new Array(lines.length);
+    let i = 0;
+    const step = () => {
+      const end = Math.min(lines.length, i + 4000);
+      for (; i < end; i++) {
+        const cut = lines[i].lastIndexOf("\u001f");
+        if (cut < 0) {
+          texts[i] = lines[i];
+          ids[i] = "";
+        } else {
+          texts[i] = lines[i].slice(0, cut);
+          ids[i] = lines[i].slice(cut + 1);
+        }
+        lines[i] = "";
+      }
+      if (i < lines.length) setTimeout(step, 0);
+      else resolve({ texts, ids });
+    };
+    step();
+  });
+}
+
+function loadLearnBank(kind, code) {
+  const prefix = kind === "vocabulary" ? "vocab" : kind === "sentence" ? "sentence" : kind;
+  const key = prefix + "-" + code;
+  if (learnBanks.has(key)) return learnBanks.get(key);
+  const promise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "NewLearn/data/bank-" + key + ".js?v=0.7c";
+    script.onload = () => {
+      const lines = (window.LEARN_BANK && window.LEARN_BANK[key]) || null;
+      if (window.LEARN_BANK) delete window.LEARN_BANK[key];
+      script.remove();
+      if (!lines) {
+        learnBanks.delete(key);
+        reject(new Error("load"));
+        return;
+      }
+      parseLearnBank(lines).then(resolve, reject);
+    };
+    script.onerror = () => {
+      script.remove();
+      learnBanks.delete(key);
+      reject(new Error("load"));
+    };
+    document.head.appendChild(script);
+  });
+  learnBanks.set(key, promise);
+  return promise;
+}
+
+function releaseLearnBanks() {
+  learnBanks.clear();
+}
+
+// Lessons follow the learned language's file order. Each row is "answer \t reading \t prompt".
+// The prompt is the first linked line in the UI language.
+function loadLearnLessons(prefix, pairName, onFrac) {
+  const parts = String(pairName || "").split("-");
+  const uiCode = parts[0];
+  const learnedCode = parts[1];
+  const size = LEARN_BANK_SIZE[prefix] || 25;
+  const letter = LEARN_CODE_LETTER[uiCode];
+  return Promise.all([
+    loadLearnBank(prefix, learnedCode),
+    loadLearnBank(prefix, uiCode),
+  ]).then(([learned, ui]) => new Promise((resolve) => {
+    const lessons = [];
+    let rows = [];
+    let name = "";
+    let index = 0;
+    const total = learned.texts.length || 1;
+    const flush = () => {
+      if (!rows.length) return;
+      lessons.push([name, rows]);
+      rows = [];
+      name = "";
+    };
+    const step = () => {
+      const end = performance.now() + 12;
+      while (performance.now() < end && index < learned.texts.length) {
+        const link = firstLearnLink(learned.ids[index], letter);
+        const meaning = link ? ui.texts[link - 1] : "";
+        if (meaning) {
+          const text = learned.texts[index];
+          if (!rows.length) name = learnLessonName(text);
+          rows.push(text + "\t\t" + meaning);
+          if (rows.length >= size) flush();
+        }
+        index += 1;
+      }
+      if (onFrac) onFrac(Math.min(1, index / total));
+      if (index < learned.texts.length) setTimeout(step, 0);
+      else {
+        flush();
+        resolve(lessons);
+      }
+    };
+    step();
+  }));
+}
+
+function sampleLearnLines(kind, uiCode, learnedCode, count) {
+  const letter = LEARN_CODE_LETTER[uiCode];
+  return Promise.all([
+    loadLearnBank(kind, learnedCode),
+    loadLearnBank(kind, uiCode),
+  ]).then(([learned, ui]) => {
+    const lines = [];
+    const seen = new Set();
+    const total = learned.texts.length;
+    let guard = 0;
+    while (lines.length < count && guard < count * 80 && total) {
+      guard += 1;
+      const index = Math.floor(Math.random() * total);
+      const link = firstLearnLink(learned.ids[index], letter);
+      const meaning = link ? ui.texts[link - 1] : "";
+      if (!meaning) continue;
+      const text = learned.texts[index];
+      const key = text + "\0" + meaning;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(text + "\t\t" + meaning);
+    }
+    return lines;
+  });
+}
+
 /** Apply saved Manual/Key Mode to a toggle button; returns the active mode. */
 function applySymbolViewModeToToggle(toggle) {
   const mode = getStoredSymbolViewMode();
@@ -1352,23 +1529,20 @@ function setupUsernameBadge() {
   }
 
   function loadPool(kind, pair, sentences, gen) {
-    const file = kind === "vocabulary" ? "vocab" : "sentence";
-    const globalName = kind === "vocabulary" ? "LEARN_VOCAB" : "LEARN_SENTENCES";
-    const script = document.createElement("script");
-    return new Promise((resolve, reject) => {
-      script.onload = () => {
-        const data = (window[globalName] && window[globalName][pair]) || [];
-        const pool = gen === testGen ? samplePool(data, 48, sentences) : [];
-        if (window[globalName]) delete window[globalName][pair];
-        script.remove();
-        resolve(pool);
-      };
-      script.onerror = () => {
-        script.remove();
-        reject(new Error("load"));
-      };
-      script.src = "NewLearn/data/" + file + "-" + pair + ".js?v=0.9";
-      document.body.appendChild(script);
+    const parts = pair.split("-");
+    return sampleLearnLines(kind, parts[0], parts[1], 48).then((lines) => {
+      if (gen !== testGen) return [];
+      const pool = [];
+      const seen = new Set();
+      lines.forEach((line) => {
+        const item = rowItem(line, sentences);
+        if (!item.word || !item.meaning) return;
+        const key = plain(item.word) + "\0" + plain(item.meaning);
+        if (seen.has(key)) return;
+        seen.add(key);
+        pool.push(item);
+      });
+      return pool;
     });
   }
 
@@ -1470,7 +1644,7 @@ function setupUsernameBadge() {
     if (test.view === "feedback" && test.round.phase !== 2) box.classList.add(question.correctShown ? "is-correct" : "is-wrong");
     const judges = el("div", "kanji-play-actions");
     ["o", "x"].forEach((choice) => {
-      const button = el("button", "transfer-lang-chip kanji-play-judge", choice);
+      const button = el("button", "transfer-lang-chip kanji-play-judge", oxJudgeWord(choice));
       button.type = "button";
       button.disabled = test.view !== "question" || test.round.phase !== 1;
       if (test.round.choice === choice) button.classList.add("is-active");
@@ -1861,6 +2035,68 @@ function getSymbolDescription(sym) {
   return (s && s.description) ? s.description : (sym.description || "");
 }
 
+const SYMBOL_DRAWN_BY = {
+  color: "Romeo Snowblitz", green: "Romeo Snowblitz", red: "Romeo Snowblitz", white: "Romeo Snowblitz",
+  yellow: "Romeo Snowblitz", brown: "Romeo Snowblitz", gray: "Romeo Snowblitz", cyan: "Romeo Snowblitz",
+  blue: "Romeo Snowblitz", magenta: "Romeo Snowblitz", purple: "Romeo Snowblitz", black: "Romeo Snowblitz",
+  state: "Romeo Snowblitz", hot: "Romeo Snowblitz", clear: "Romeo Snowblitz", stripe: "Romeo Snowblitz",
+  shape: "Romeo Snowblitz", hole: "Romeo Snowblitz", curve: "Romeo Snowblitz", tilt: "Romeo Snowblitz",
+  crushed: "Romeo Snowblitz", movement: "Romeo Snowblitz", going: "Romeo Snowblitz", comingback: "Romeo Snowblitz",
+  slip: "Romeo Snowblitz", arriving: "Romeo Snowblitz", skin: "Romeo Snowblitz", front: "Romeo Snowblitz",
+  nose: "Romeo Snowblitz", life: "Romeo Snowblitz", place: "Romeo Snowblitz", stick: "Romeo Snowblitz",
+  micro: "Romeo Snowblitz", amphibian: "Romeo Snowblitz", food: "Romeo Snowblitz", vegetable: "Romeo Snowblitz",
+  drink: "Romeo Snowblitz", bone: "Romeo Snowblitz", autonomy: "Romeo Snowblitz", planet: "Romeo Snowblitz",
+  weapon: "Romeo Snowblitz", fire: "Romeo Snowblitz", sound: "Romeo Snowblitz", gravity: "Romeo Snowblitz",
+  aggressive: "Romeo Snowblitz", painful: "Romeo Snowblitz", i: "Romeo Snowblitz", we: "Romeo Snowblitz",
+  you: "Romeo Snowblitz", fact: "Romeo Snowblitz", grammar: "Romeo Snowblitz", question: "Romeo Snowblitz",
+  they: "Romeo Snowblitz", bump: "Romeo Snowblitz", dot: "Romeo Snowblitz", many: "Romeo Snowblitz",
+  decieve: "Romeo Snowblitz", remove: "Romeo Snowblitz", round: "Romeo Snowblitz", building: "Romeo Snowblitz",
+  surprise: "Romeo Snowblitz", wishful: "Romeo Snowblitz", two: "Romeo Snowblitz", one: "Romeo Snowblitz",
+  believe: "Romeo Snowblitz", make: "Romeo Snowblitz", end: "Romeo Snowblitz",
+  hard: "jan Sonja", sweet: "jan Sonja", dirty: "jan Sonja", cold: "jan Sonja", new: "jan Sonja", old: "jan Sonja",
+  surface: "jan Sonja", flat: "jan Sonja", cord: "jan Sonja", square: "jan Sonja", above: "jan Sonja",
+  down: "jan Sonja", center: "jan Sonja", human: "jan Sonja", head: "jan Sonja", ear: "jan Sonja",
+  eye: "jan Sonja", body: "jan Sonja", arm: "jan Sonja", leg: "jan Sonja", back: "jan Sonja", plant: "jan Sonja",
+  reptile: "jan Sonja", fearful: "jan Sonja", watercreature: "jan Sonja", wingedcreature: "jan Sonja",
+  animal: "jan Sonja", insect: "jan Sonja", spice: "jan Sonja", plantproduct: "jan Sonja", fruit: "jan Sonja",
+  creator: "jan Sonja", cloth: "jan Sonja", light: "jan Sonja", market: "jan Sonja", image: "jan Sonja",
+  money: "jan Sonja", tool: "jan Sonja", road: "jan Sonja", matter: "jan Sonja", earth: "jan Sonja",
+  fluid: "jan Sonja", time: "jan Sonja", gas: "jan Sonja", emotion: "jan Sonja", strong: "jan Sonja",
+  sexy: "jan Sonja", positive: "jan Sonja", strange: "jan Sonja", playful: "jan Sonja", negative: "jan Sonja",
+  name: "jan Sonja", fight: "jan Sonja", dead: "jan Sonja", group: "jan Sonja", same: "jan Sonja",
+  all: "jan Sonja", numbers: "jan Sonja", small: "jan Sonja", big: "jan Sonja", zero: "jan Sonja",
+  change: "jan Sonja", start: "jan Sonja", resting: "jan Sonja", wait: "jan Sonja",
+  left: "jan Elemenopi", right: "jan Elemenopi", medicine: "jan Elemenopi", electricity: "jan Elemenopi",
+  semisolid: "jan Same", embarrassment: "jan Same", cut: "jan Same", prevent: "jan Same",
+  he: "scarlet", she: "scarlet",
+  soft: "jan Seli", sharp: "the_whatevers", interlock: "mun Kekan San", mouth: "Jack Humbert",
+  mushroom: "jan Alise", sticky: "jan Kapilu, kala pona Tonyu", reflect: "jan Sa"
+};
+
+function symbolDrawnBy(sym) {
+  if (!sym || sym.id == null) return "";
+  const en = window.TRANSLATIONS && window.TRANSLATIONS.en && window.TRANSLATIONS.en.symbols;
+  const name = (en && en[sym.id] && en[sym.id].name) || sym.name || "";
+  const key = String(name).toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return SYMBOL_DRAWN_BY[key] || "";
+}
+
+function symbolViewerName() {
+  const stored = getStoredUsername();
+  if (stored) return stored;
+  const pack = (USERNAME_UI_TEXTS[getStoredLang()] || USERNAME_UI_TEXTS.en || {});
+  return pack.anonymousName || ANONYMOUS_NAME;
+}
+
+function symbolImageArtist(sym, imageIndex) {
+  if (!sym) return "";
+  const index = Number(imageIndex) || 0;
+  if (index <= 0) return symbolDrawnBy(sym);
+  const cfg = getCustomImageConfigForSymbolId(sym.id);
+  const stored = cfg.customArtists && String(cfg.customArtists[index - 1] || "").trim();
+  return stored || symbolViewerName();
+}
+
 /** Category rows from the Manual layout: head symbol + 12 cells each. */
 function getSymbolCategoryRows() {
   const layout = (typeof symbolGridLayout !== "undefined" && Array.isArray(symbolGridLayout))
@@ -2232,11 +2468,13 @@ function addCustomImageToSymbol(sym, dataUrl) {
   if (!sym || sym.id == null || !dataUrl) return null;
   const cfg = getCustomImageConfigForSymbolId(sym.id);
   cfg.customImages.push(dataUrl);
+  cfg.customArtists.push(symbolViewerName());
   cfg.selected = cfg.customImages.length;
   const map = getStoredCustomSymbolImages();
   map[String(sym.id)] = {
     selected: cfg.selected,
     customImages: cfg.customImages.slice(),
+    customArtists: cfg.customArtists.slice(),
   };
   saveStoredCustomSymbolImages(map);
   return cfg;
@@ -2926,8 +3164,304 @@ function finalizeHomographIndexBuilder(builder) {
   return { byLang: builder.byLang };
 }
 
+
+const CONCEPT_LANGS = ["zh", "en", "fr", "de", "it", "ja", "ko", "pt", "ru", "es"];
+let conceptCatalog = null;
+let conceptCatalogBuild = null;
+
+function dictionaryUsesConcepts() {
+  return Array.isArray(window.DICTIONARY_CONCEPTS) && window.DICTIONARY_CONCEPTS.length > 0;
+}
+
+function resetLearnedDictionaryStars() {
+  if (window.__dictionaryStarsReset) return;
+  window.__dictionaryStarsReset = true;
+  try {
+    if (localStorage.getItem("dictionaryConceptVersion") !== "1") {
+      const raw = localStorage.getItem("dictionaryEntries");
+      if (raw) {
+        const entries = JSON.parse(raw);
+        if (Array.isArray(entries)) {
+          entries.forEach((entry) => {
+            if (entry && entry.homographs) entry.homographs = {};
+          });
+          localStorage.setItem("dictionaryEntries", JSON.stringify(entries));
+        }
+      }
+      localStorage.setItem("dictionaryConceptVersion", "1");
+    }
+  } catch (_) {}
+  sharedManualHomographIndex = null;
+}
+
+
+function conceptWordStartsMarked(text) {
+  const value = String(text || "").replace(/^\s+/, "");
+  return /^\p{P}/u.test(value);
+}
+
+function conceptScriptMisplaced(code, text) {
+  const value = String(text || "");
+  if (!value) return false;
+  if (code !== "ja" && /[\u3040-\u309F\u30A0-\u30FF\u31F0-\u31FF\uFF66-\uFF9D]/.test(value)) return true;
+  if (code !== "ko" && /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(value)) return true;
+  if (code !== "zh" && code !== "ja" && code !== "ko" && /[\u3400-\u9FFF]/.test(value)) return true;
+  return false;
+}
+
+const CONCEPT_USER_KEY = "conceptUserState";
+let conceptUserCache = null;
+
+function emptyConceptUserState() {
+  return { labels: {}, kanmoji: {}, edits: {}, wordKanmoji: {} };
+}
+
+function readConceptUserState() {
+  try {
+    const value = JSON.parse(localStorage.getItem(CONCEPT_USER_KEY) || "{}");
+    const base = emptyConceptUserState();
+    if (!value || typeof value !== "object") return base;
+    if (value.labels && typeof value.labels === "object") base.labels = value.labels;
+    if (value.kanmoji && typeof value.kanmoji === "object") base.kanmoji = value.kanmoji;
+    if (value.edits && typeof value.edits === "object") base.edits = value.edits;
+    if (value.wordKanmoji && typeof value.wordKanmoji === "object") base.wordKanmoji = value.wordKanmoji;
+    return base;
+  } catch (err) {
+    return emptyConceptUserState();
+  }
+}
+
+function writeConceptUserState(state) {
+  try {
+    localStorage.setItem(CONCEPT_USER_KEY, JSON.stringify(state));
+  } catch (err) {
+    console.warn("Could not store dictionary marks", err);
+  }
+}
+
+function conceptUser() {
+  if (!conceptUserCache) conceptUserCache = readConceptUserState();
+  return conceptUserCache;
+}
+
+function invalidateConceptUserCache() {
+  conceptUserCache = null;
+}
+
+function conceptEditOf(id) {
+  return conceptUser().edits[String(id)] || null;
+}
+
+function conceptShownWord(rec, code) {
+  const edit = conceptEditOf(rec.id);
+  if (edit && edit.words && Object.prototype.hasOwnProperty.call(edit.words, code)) return String(edit.words[code]);
+  return (rec.words && rec.words[code]) || "";
+}
+
+function conceptShownDefinition(rec, code) {
+  const edit = conceptEditOf(rec.id);
+  if (edit && edit.definitions && Object.prototype.hasOwnProperty.call(edit.definitions, code)) return String(edit.definitions[code]);
+  return rec.definition || "";
+}
+
+function conceptShownPos(rec) {
+  const edit = conceptEditOf(rec.id);
+  if (edit && edit.pos != null) return String(edit.pos);
+  return rec.pos || "";
+}
+
+function conceptShownId(rec) {
+  const edit = conceptEditOf(rec.id);
+  const n = edit && edit.id != null ? parseInt(edit.id, 10) : rec.id;
+  return n > 0 ? n : rec.id;
+}
+
+function conceptOccupantOfShownId(n, exceptId) {
+  const catalog = conceptCatalog;
+  if (!catalog || !(n > 0)) return null;
+  const edits = conceptUser().edits;
+  const keys = Object.keys(edits);
+  for (let i = 0; i < keys.length; i++) {
+    const ownerId = parseInt(keys[i], 10);
+    if (ownerId === exceptId) continue;
+    const claim = edits[keys[i]] && edits[keys[i]].id;
+    if (claim != null && parseInt(claim, 10) === n) return catalog.byId.get(ownerId) || null;
+  }
+  const direct = catalog.byId.get(n);
+  if (!direct || direct.id === exceptId) return null;
+  const moved = edits[String(direct.id)];
+  if (moved && moved.id != null && parseInt(moved.id, 10) !== n) return null;
+  return direct;
+}
+
+function nextFreeConceptShownId(start) {
+  const catalog = conceptCatalog;
+  const from = (parseInt(start, 10) || 0) + 1;
+  if (!catalog) return from;
+  const used = new Set();
+  catalog.byId.forEach((rec) => used.add(conceptShownId(rec)));
+  let n = from;
+  while (used.has(n)) n += 1;
+  return n;
+}
+
+function conceptEnglishPhrase(rec) {
+  const word = String(conceptShownWord(rec, "en") || "").trim();
+  if (!word) return false;
+  return word.split(/\s+/).length > 1;
+}
+
+function conceptWordHitsQuery(word, query, code) {
+  if (!word || !query) return false;
+  const folded = String(word).toLocaleLowerCase(code || "en");
+  if (folded.startsWith(query)) return true;
+  const localQuery = query.toLocaleLowerCase(code || "en");
+  return localQuery !== query && folded.startsWith(localQuery);
+}
+
+function conceptUserLabel(rec) {
+  const mark = conceptUser().labels[String(rec.id)];
+  if (mark === "green" || mark === "yellow" || mark === "red") return mark;
+  if (rec.autoRed) return "red";
+  if (conceptEnglishPhrase(rec)) return "yellow";
+  return "";
+}
+
+function conceptKanmojiIds(rec) {
+  const kanmoji = conceptUser().kanmoji;
+  const key = String(rec.id);
+  if (Object.prototype.hasOwnProperty.call(kanmoji, key)) {
+    const list = kanmoji[key];
+    return Array.isArray(list) ? list.map((id) => parseInt(id, 10)).filter((id) => id && !isNaN(id)).slice(0, 4) : [];
+  }
+  if (rec.id > 0 && rec.id < 1000) return [rec.id];
+  return [];
+}
+
+function aficCanEditLanguage(code) {
+  if (typeof isAdminMode === "function" && isAdminMode()) return true;
+  return readAficPassed().indexOf(code) >= 0;
+}
+
+function placeConceptLabels(recs) {
+  let sunk = false;
+  for (let i = 0; i < recs.length; i++) {
+    const label = conceptUserLabel(recs[i]);
+    if (label === "yellow" || label === "red") {
+      sunk = true;
+      break;
+    }
+  }
+  if (!sunk) return recs;
+  const keep = [];
+  const yellow = [];
+  const red = [];
+  for (let i = 0; i < recs.length; i++) {
+    const label = conceptUserLabel(recs[i]);
+    if (label === "red") red.push(recs[i]);
+    else if (label === "yellow") yellow.push(recs[i]);
+    else keep.push(recs[i]);
+  }
+  return keep.concat(yellow, red);
+}
+
+function conceptRecFromLine(line) {
+  const parts = String(line || "").split("\t");
+  if (parts.length < 14) return null;
+  const id = parseInt(parts[0], 10);
+  if (!id) return null;
+  const words = {};
+  let autoRed = false;
+  for (let i = 0; i < CONCEPT_LANGS.length; i++) {
+    words[CONCEPT_LANGS[i]] = parts[4 + i] || "";
+    if (!autoRed && (conceptWordStartsMarked(words[CONCEPT_LANGS[i]]) || conceptScriptMisplaced(CONCEPT_LANGS[i], words[CONCEPT_LANGS[i]]))) autoRed = true;
+  }
+  return { id: id, origin: parts[1] || "", pos: parts[2] || "", definition: parts[3] || "", words: words, autoRed: autoRed };
+}
+
+function startConceptBuckets() {
+  const byId = new Map();
+  const lists = {};
+  const counts = {};
+  CONCEPT_LANGS.forEach((code) => {
+    lists[code] = [];
+    counts[code] = new Map();
+  });
+  return { byId: byId, lists: lists, counts: counts };
+}
+
+function ingestConceptRec(buckets, rec) {
+  if (!rec || buckets.byId.has(rec.id)) return;
+  buckets.byId.set(rec.id, rec);
+  CONCEPT_LANGS.forEach((code) => {
+    const word = rec.words[code];
+    if (!word) return;
+    buckets.lists[code].push(rec);
+    const norm = normalizeDictionaryWord(word);
+    if (!norm) return;
+    buckets.counts[code].set(norm, (buckets.counts[code].get(norm) || 0) + 1);
+  });
+}
+
+function finishConceptCatalog(buckets) {
+  const stars = {};
+  CONCEPT_LANGS.forEach((code) => {
+    stars[code] = new Set();
+    buckets.counts[code].forEach((n, word) => {
+      if (n >= 2) stars[code].add(word);
+    });
+  });
+  conceptCatalog = { byId: buckets.byId, lists: buckets.lists, stars: stars };
+  return conceptCatalog;
+}
+
+function getConceptCatalogSync() {
+  if (conceptCatalog) return conceptCatalog;
+  resetLearnedDictionaryStars();
+  const buckets = startConceptBuckets();
+  const rows = window.DICTIONARY_CONCEPTS || [];
+  for (let i = 0; i < rows.length; i++) ingestConceptRec(buckets, conceptRecFromLine(rows[i]));
+  return finishConceptCatalog(buckets);
+}
+
+async function ensureConceptCatalog(onProgress) {
+  if (conceptCatalog) return conceptCatalog;
+  if (conceptCatalogBuild) return conceptCatalogBuild;
+  conceptCatalogBuild = (async () => {
+    resetLearnedDictionaryStars();
+    const buckets = startConceptBuckets();
+    const rows = window.DICTIONARY_CONCEPTS || [];
+    const chunk = 6000;
+    for (let i = 0; i < rows.length; i += chunk) {
+      const end = Math.min(i + chunk, rows.length);
+      for (let j = i; j < end; j++) ingestConceptRec(buckets, conceptRecFromLine(rows[j]));
+      if (onProgress) onProgress(rows.length ? end / rows.length : 1);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const stars = {};
+    CONCEPT_LANGS.forEach((code) => {
+      stars[code] = new Set();
+      buckets.counts[code].forEach((n, word) => {
+        if (n >= 2) stars[code].add(word);
+      });
+    });
+    conceptCatalog = { byId: buckets.byId, lists: buckets.lists, stars: stars };
+    return conceptCatalog;
+  })();
+  try {
+    return await conceptCatalogBuild;
+  } finally {
+    conceptCatalogBuild = null;
+  }
+}
+
 function getSharedHomographIndex() {
   if (sharedHomographIndex) return sharedHomographIndex;
+  if (dictionaryUsesConcepts()) {
+    const catalogNow = getConceptCatalogSync();
+    sharedHomographIndex = { byLang: catalogNow.stars };
+    return sharedHomographIndex;
+  }
   const builder = createHomographIndexBuilder();
   const rows = Array.isArray(window.WORLD_DICTIONARY_ROWS) ? window.WORLD_DICTIONARY_ROWS : [];
   rows.forEach((line) => ingestHomographIndexRow(builder, line));
@@ -2937,6 +3471,7 @@ function getSharedHomographIndex() {
 
 async function buildSharedHomographIndexAsync(onStageProgress, yieldFn) {
   if (sharedHomographIndex) return sharedHomographIndex;
+  if (dictionaryUsesConcepts()) return getSharedHomographIndex();
   const builder = createHomographIndexBuilder();
   const rows = Array.isArray(window.WORLD_DICTIONARY_ROWS) ? window.WORLD_DICTIONARY_ROWS : [];
   const chunkSize = 12000;
@@ -3960,11 +4495,13 @@ function getCustomImageConfigForSymbolId(symbolId) {
   const map = getStoredCustomSymbolImages();
   const cfg = map[String(symbolId)] || {};
   const customImages = Array.isArray(cfg.customImages) ? cfg.customImages.filter(Boolean) : [];
+  const customArtists = Array.isArray(cfg.customArtists) ? cfg.customArtists.slice(0, customImages.length) : [];
+  while (customArtists.length < customImages.length) customArtists.push("");
   let selected = parseInt(cfg.selected, 10);
   if (!Number.isFinite(selected)) selected = 0;
   if (selected < 0) selected = 0;
   if (selected > customImages.length) selected = customImages.length;
-  return { selected, customImages };
+  return { selected, customImages, customArtists };
 }
 
 function getEffectiveSymbolImageSource(symOrRef) {
@@ -4425,7 +4962,19 @@ function setupSharedSymbolInfoBox(onSaved) {
   let pendingImageConfig = null;
 
   function cloneImageConfig(cfg) {
-    return { selected: cfg.selected, customImages: cfg.customImages.slice() };
+    return {
+      selected: cfg.selected,
+      customImages: cfg.customImages.slice(),
+      customArtists: (cfg.customArtists || []).slice(),
+    };
+  }
+
+  function paintInfoArtist() {
+    const drawnBy = infoBox.querySelector("#info-drawn-by");
+    if (!drawnBy || !currentInfoSymbol || !pendingImageConfig) return;
+    const artist = symbolImageArtist(currentInfoSymbol, pendingImageConfig.selected);
+    drawnBy.textContent = artist ? "Drawn by: " + artist : "";
+    drawnBy.hidden = !artist;
   }
 
   function getCurrentImageSource(sym, cfg) {
@@ -4466,6 +5015,7 @@ function setupSharedSymbolInfoBox(onSaved) {
       getSymbolName(currentInfoSymbol)
     ));
     updateImageButtons();
+    paintInfoArtist();
   }
 
   if (closeInfoBtn) {
@@ -4490,6 +5040,14 @@ function setupSharedSymbolInfoBox(onSaved) {
     const displayName = getSymbolName(sym);
     infoName.textContent = displayName;
     infoDescription.textContent = getSymbolDescription(sym) || "";
+    let drawnBy = infoBox.querySelector("#info-drawn-by");
+    if (!drawnBy && infoDescription) {
+      drawnBy = document.createElement("p");
+      drawnBy.id = "info-drawn-by";
+      drawnBy.className = "info-drawn-by";
+      infoDescription.insertAdjacentElement("afterend", drawnBy);
+    }
+    paintInfoArtist();
     infoImageWrap.innerHTML = ""; // clear until we set it in setTimeout so we don’t flash the previous symbol
     // Show popup immediately so it’s responsive; load storage and image next tick to avoid blocking input
     infoNote.value = "";
@@ -4550,6 +5108,7 @@ function setupSharedSymbolInfoBox(onSaved) {
         const dataUrl = String(reader.result || "");
         if (!dataUrl.startsWith("data:image/")) return;
         pendingImageConfig.customImages.push(dataUrl);
+        pendingImageConfig.customArtists.push(symbolViewerName());
         pendingImageConfig.selected = pendingImageConfig.customImages.length; // default=0, customs start at 1
         renderInfoImageSelection();
         if (infoImageUploadPanel) infoImageUploadPanel.classList.add("hidden");
@@ -4570,6 +5129,7 @@ function setupSharedSymbolInfoBox(onSaved) {
       if (idx < 0 || idx >= pendingImageConfig.customImages.length) return;
       if (!confirm(getTranslation("create.confirmDeleteCustomImage") || "Delete this custom image for this symbol?")) return;
       pendingImageConfig.customImages.splice(idx, 1);
+      pendingImageConfig.customArtists.splice(idx, 1);
       if (pendingImageConfig.selected > pendingImageConfig.customImages.length) {
         pendingImageConfig.selected = pendingImageConfig.customImages.length;
       }
@@ -4591,6 +5151,7 @@ function setupSharedSymbolInfoBox(onSaved) {
         map[String(currentInfoSymbol.id)] = {
           selected: pendingImageConfig.selected,
           customImages: pendingImageConfig.customImages.slice(),
+          customArtists: (pendingImageConfig.customArtists || []).slice(),
         };
         saveStoredCustomSymbolImages(map);
       }
@@ -4666,7 +5227,9 @@ if (page === "create") {
   const clearEditButton = document.getElementById("create-clear-edit");
   const submitBtn = document.getElementById("submit-word");
   let editingEntryId = "";
+  let editingConceptId = "";
   let retrievedWorldLine = "";
+  let conceptLookupTimer = 0;
   let compoundParts = [];
 
   setupSharedSymbolInfoBox(() => {
@@ -5049,14 +5612,10 @@ if (page === "create") {
     return uiLang !== "en" && LANGUAGES[uiLang] ? uiLang : "de";
   }
 
-  function ensureDistinctLanguages(changedSelect) {
+  function ensureDistinctLanguages() {
     if (isUnknownTranslationLang(translationLanguageSelect.value)) return;
     if (originLanguageSelect.value !== translationLanguageSelect.value) return;
-    const other = changedSelect === originLanguageSelect ? translationLanguageSelect : originLanguageSelect;
-    const fallback = getDefaultTranslationLanguage(changedSelect.value);
-    other.value = fallback === changedSelect.value
-      ? (Object.keys(LANGUAGES).find((code) => code !== changedSelect.value) || "en")
-      : fallback;
+    translationLanguageSelect.value = "unknown";
   }
 
   function applyPronunciationField(row, labelEl, inputEl, lang) {
@@ -5113,11 +5672,18 @@ if (page === "create") {
 
   function clearCreateEditor(clearForm) {
     editingEntryId = "";
+    editingConceptId = "";
     retrievedWorldLine = "";
     setEditingState("");
+    const info = document.getElementById("create-concept-info");
+    if (info) {
+      info.textContent = "";
+      info.classList.add("hidden");
+    }
     if (clearForm) {
       originWordInput.value = "";
       translatedWordInput.value = "";
+      applyCreateAccess(true);
       setCreateHomographStar(originHomographStarBtn, false);
       setCreateHomographStar(translatedHomographStarBtn, false);
       originPronunciationInput.value = "";
@@ -5270,7 +5836,260 @@ if (page === "create") {
     setEditingState("Retrieved: " + (originWordInput.value || translatedWordInput.value));
   }
 
+
+  function createApprovedLangs() {
+    if (typeof isAdminMode === "function" && isAdminMode()) return Object.keys(LANGUAGES);
+    if (typeof readAficPassed !== "function") return [];
+    return Object.keys(LANGUAGES).filter((code) => readAficPassed().indexOf(code) >= 0);
+  }
+
+  function createCanAddWords() {
+    return createApprovedLangs().length > 0;
+  }
+
+  function fillCreateLangSelect(select, codes, includeUnknown) {
+    const current = select.value;
+    select.textContent = "";
+    codes.forEach((code) => {
+      const opt = document.createElement("option");
+      opt.value = code;
+      opt.textContent = LANGUAGES[code] || code;
+      select.appendChild(opt);
+    });
+    if (includeUnknown) {
+      const opt = document.createElement("option");
+      opt.value = "unknown";
+      opt.textContent = getTranslation("create.unknownLanguage") || "Unknown";
+      select.appendChild(opt);
+    }
+    const values = Array.from(select.options).map((opt) => opt.value);
+    if (values.indexOf(current) >= 0) select.value = current;
+    else if (includeUnknown) select.value = "unknown";
+    else if (values.length) select.value = values[0];
+  }
+
+  function applyCreateAccess(forceUnknown) {
+    const approved = createApprovedLangs();
+    const canAdd = approved.length > 0;
+    const editing = !!editingConceptId;
+    const originCodes = canAdd ? approved : Object.keys(LANGUAGES);
+    if (!editing && forceUnknown) {
+      const ui = getStoredLang();
+      if (originCodes.indexOf(ui) >= 0) originLanguageSelect.value = ui;
+      else if (originCodes.length) originLanguageSelect.value = originCodes[0];
+    }
+    fillCreateLangSelect(originLanguageSelect, originCodes, false);
+    const transCodes = originCodes.filter((code) => code !== originLanguageSelect.value);
+    fillCreateLangSelect(translationLanguageSelect, transCodes, true);
+    if (forceUnknown && !editing) translationLanguageSelect.value = "unknown";
+    const form = document.querySelector(".definition-box");
+    const pos = document.querySelector(".create-lookup-pos-wrap");
+    if (form) form.classList.toggle("hidden", !canAdd);
+    if (pos) pos.classList.toggle("hidden", !canAdd);
+    const saveKanmoji = document.getElementById("create-save-kanmoji");
+    if (saveKanmoji) {
+      saveKanmoji.textContent = getTranslation("create.saveKanmoji") || "Save Kanmoji";
+      saveKanmoji.classList.toggle("hidden", !(editing && !canAdd));
+    }
+    const originOk = canAdd && (!editing || (typeof aficCanEditLanguage === "function" && aficCanEditLanguage(originLanguageSelect.value)));
+    originWordInput.readOnly = !originOk;
+    const transLang = translationLanguageSelect.value;
+    const transOk = canAdd && !isUnknownTranslationLang(transLang) && typeof aficCanEditLanguage === "function" && aficCanEditLanguage(transLang);
+    translatedWordInput.readOnly = !transOk && (editing || !canAdd);
+    if (!canAdd) {
+      originWordInput.readOnly = true;
+      translatedWordInput.readOnly = true;
+    }
+  }
+
+  function renderCreateConceptInfo(rec) {
+    const box = document.getElementById("create-concept-info");
+    if (!box || !rec) return;
+    box.classList.remove("hidden");
+    box.textContent = "";
+    const lang = getStoredLang();
+    const letter = LEARN_CODE_LETTER[lang] || "";
+    const idRow = document.createElement("p");
+    idRow.textContent = "ID# " + letter + conceptShownId(rec);
+    box.appendChild(idRow);
+    const pos = conceptShownPos(rec);
+    if (pos) {
+      const posRow = document.createElement("p");
+      posRow.textContent = (getTranslation("dictionary.partOfSpeech") || "POS") + " " + pos;
+      box.appendChild(posRow);
+    }
+    CONCEPT_LANGS.forEach((code) => {
+      const value = conceptShownWord(rec, code);
+      if (!value) return;
+      const row = document.createElement("p");
+      row.lang = code;
+      const name = document.createElement("strong");
+      name.textContent = (LANGUAGES[code] || code) + " ";
+      row.appendChild(name);
+      row.appendChild(document.createTextNode(value));
+      box.appendChild(row);
+    });
+    const defRow = document.createElement("p");
+    defRow.textContent = (getTranslation("dictionary.definition") || "Definition") + " " + conceptShownDefinition(rec, lang);
+    box.appendChild(defRow);
+  }
+
+  function loadConceptSymbols(rec) {
+    const ids = conceptKanmojiIds(rec);
+    const list = typeof symbols !== "undefined" ? symbols : [];
+    categorySymbols.is = ids.map((stored) => {
+      const n = parseInt(stored, 10);
+      const sym = list.find((item) => item.id === Math.abs(n));
+      if (!sym) return null;
+      const ref = { id: sym.id, name: sym.name, image: sym.image, rgb: sym.rgb, description: sym.description };
+      if (n < 0) ref.negated = true;
+      return ref;
+    }).filter(Boolean);
+    renderCategories();
+  }
+
+  function loadConceptIntoEditor(rec) {
+    editingConceptId = String(rec.id);
+    editingEntryId = "";
+    retrievedWorldLine = "";
+    const approved = createApprovedLangs();
+    const ui = getStoredLang();
+    const origin = approved.indexOf(ui) >= 0 ? ui : (approved[0] || ui);
+    if (LANGUAGES[origin]) originLanguageSelect.value = origin;
+    translationLanguageSelect.value = "unknown";
+    applyCreateAccess(false);
+    updateManualLanguageFields();
+    originWordInput.value = conceptShownWord(rec, originLanguageSelect.value);
+    translatedWordInput.value = "";
+    renderCreateConceptInfo(rec);
+    loadConceptSymbols(rec);
+    const letter = LEARN_CODE_LETTER[ui] || "";
+    setEditingState((conceptShownWord(rec, ui) || "") + " · " + letter + conceptShownId(rec));
+    dictionaryResults.classList.add("hidden");
+  }
+
+  function saveEditingConcept() {
+    if (!editingConceptId || typeof readConceptUserState !== "function") return;
+    const recId = parseInt(editingConceptId, 10);
+    const rec = conceptCatalog && conceptCatalog.byId.get(recId);
+    const state = readConceptUserState();
+    const ids = (categorySymbols.is || []).map((item) => parseInt(item.id, 10)).filter((id) => id > 0).slice(0, 4);
+    const fallback = recId > 0 && recId < 1000 ? [recId] : [];
+    const same = ids.length === fallback.length && ids.every((id, index) => id === fallback[index]);
+    if (same) delete state.kanmoji[editingConceptId];
+    else state.kanmoji[editingConceptId] = ids;
+    let changedWords = false;
+    if (rec && createCanAddWords()) {
+      const key = editingConceptId;
+      const previous = state.edits[key] || {};
+      const edit = {
+        words: Object.assign({}, previous.words || {}),
+        definitions: Object.assign({}, previous.definitions || {}),
+      };
+      if (previous.pos != null) edit.pos = previous.pos;
+      if (previous.id != null) edit.id = previous.id;
+      const originLang = originLanguageSelect.value;
+      if (!originWordInput.readOnly && typeof aficCanEditLanguage === "function" && aficCanEditLanguage(originLang)) {
+        const nextWord = originWordInput.value.trim();
+        if (nextWord && nextWord !== (rec.words[originLang] || "")) {
+          edit.words[originLang] = nextWord;
+          changedWords = true;
+        } else if (nextWord === (rec.words[originLang] || "")) {
+          delete edit.words[originLang];
+        }
+      }
+      const translatedLang = translationLanguageSelect.value;
+      if (!isUnknownTranslationLang(translatedLang) && !translatedWordInput.readOnly && typeof aficCanEditLanguage === "function" && aficCanEditLanguage(translatedLang)) {
+        const nextWord = translatedWordInput.value.trim();
+        if (!nextWord) return alert(getTranslation("create.enterTranslatedWord"));
+        if (nextWord !== (rec.words[translatedLang] || "")) {
+          edit.words[translatedLang] = nextWord;
+          changedWords = true;
+        } else {
+          delete edit.words[translatedLang];
+        }
+      }
+      const empty = !Object.keys(edit.words).length && !Object.keys(edit.definitions).length && edit.pos == null && edit.id == null;
+      if (empty) delete state.edits[key];
+      else state.edits[key] = edit;
+    }
+    writeConceptUserState(state);
+    invalidateConceptUserCache();
+    alert(getTranslation(changedWords ? "create.wordUpdated" : "create.kanmojiSaved"));
+    if (rec) renderCreateConceptInfo(rec);
+  }
+
+  function conceptsMatchingTypedId(catalog, raw) {
+    const text = String(raw || "").trim();
+    let n = 0;
+    const tagged = text.match(/^([CEFGIJKPRS])(\d+)$/i);
+    if (tagged) n = parseInt(tagged[2], 10);
+    else if (/^\d+$/.test(text)) n = parseInt(text, 10);
+    if (!(n > 0)) return [];
+    const found = [];
+    const edits = conceptUser().edits;
+    Object.keys(edits).forEach((key) => {
+      if (parseInt(edits[key] && edits[key].id, 10) === n) {
+        const rec = catalog.byId.get(parseInt(key, 10));
+        if (rec) found.push(rec);
+      }
+    });
+    const direct = catalog.byId.get(n);
+    if (direct && !found.some((item) => item.id === direct.id)) {
+      const moved = edits[String(direct.id)];
+      if (!(moved && moved.id != null && parseInt(moved.id, 10) !== n)) found.push(direct);
+    }
+    return found;
+  }
+
+  function renderConceptLookupResults() {
+    const query = (dictionarySearchInput.value || "").trim();
+    if (!query) {
+      clearTimeout(conceptLookupTimer);
+      dictionaryResults.innerHTML = "";
+      dictionaryResults.classList.add("hidden");
+      return;
+    }
+    clearTimeout(conceptLookupTimer);
+    conceptLookupTimer = setTimeout(() => {
+      const catalog = conceptCatalog;
+      if (!catalog) {
+        if (typeof ensureConceptCatalog === "function") {
+          ensureConceptCatalog().then(() => renderConceptLookupResults());
+        }
+        return;
+      }
+      const live = (dictionarySearchInput.value || "").trim();
+      if (!live) return;
+      const lang = getStoredLang();
+      const q = live.normalize("NFKC").toLocaleLowerCase(lang);
+      const matches = conceptsMatchingTypedId(catalog, live);
+      const list = catalog.lists[lang] || [];
+      for (let i = 0; i < list.length && matches.length < 40; i++) {
+        const rec = list[i];
+        if (matches.some((item) => item.id === rec.id)) continue;
+        const word = conceptShownWord(rec, lang);
+        if (word && word.normalize("NFKC").toLocaleLowerCase(lang).includes(q)) matches.push(rec);
+      }
+      dictionaryResults.innerHTML = "";
+      const letter = LEARN_CODE_LETTER[lang] || "";
+      matches.forEach((rec) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "create-dictionary-result";
+        button.textContent = (conceptShownWord(rec, lang) || "") + "  " + letter + conceptShownId(rec);
+        button.addEventListener("click", () => loadConceptIntoEditor(rec));
+        dictionaryResults.appendChild(button);
+      });
+      dictionaryResults.classList.toggle("hidden", !dictionaryResults.children.length);
+    }, 180);
+  }
+
   function renderDictionaryLookupResults() {
+    if (typeof dictionaryUsesConcepts === "function" && dictionaryUsesConcepts()) {
+      renderConceptLookupResults();
+      return;
+    }
     const query = normalizeCreatedWord(dictionarySearchInput.value, originLanguageSelect.value);
     dictionaryResults.innerHTML = "";
     if (!query) {
@@ -5375,9 +6194,7 @@ if (page === "create") {
     dictionaryResults.classList.toggle("hidden", !dictionaryResults.children.length);
   }
 
-  originLanguageSelect.value = getStoredLang();
-  translationLanguageSelect.value = getDefaultTranslationLanguage(originLanguageSelect.value);
-  ensureDistinctLanguages(originLanguageSelect);
+  applyCreateAccess(true);
   buildPartOfSpeechOptions();
   posOptions.addEventListener("change", updateCompoundBuilderVisibility);
   compoundAddButton.addEventListener("click", openCompoundSearch);
@@ -5389,7 +6206,7 @@ if (page === "create") {
   updateManualLanguageFields();
   updateCompoundBuilderVisibility();
   originLanguageSelect.addEventListener("change", () => {
-    ensureDistinctLanguages(originLanguageSelect);
+    applyCreateAccess(false);
     updateManualLanguageFields();
     renderDictionaryLookupResults();
   });
@@ -5399,6 +6216,8 @@ if (page === "create") {
   });
   dictionarySearchInput.addEventListener("input", renderDictionaryLookupResults);
   clearEditButton.addEventListener("click", () => clearCreateEditor(true));
+  const saveKanmojiBtn = document.getElementById("create-save-kanmoji");
+  if (saveKanmojiBtn) saveKanmojiBtn.addEventListener("click", () => saveEditingConcept());
   const requestedEntryId = sessionStorage.getItem("createEditEntryId");
   const requestedWorldLine = sessionStorage.getItem("createEditWorldLine");
   const requestedWorldLanguage = sessionStorage.getItem("createEditWorldLanguage");
@@ -5662,10 +6481,14 @@ if (page === "create") {
       modeToggle.textContent = getTranslation(modeToggle.dataset.mode === "key" ? "create.keyMode" : "create.manualMode");
     }
     if (typeof window.updateCreateImageUiText === "function") window.updateCreateImageUiText();
-    if (!editingEntryId && !retrievedWorldLine && !originWordInput.value.trim() && !translatedWordInput.value.trim()) {
-      originLanguageSelect.value = getStoredLang();
-      translationLanguageSelect.value = getDefaultTranslationLanguage(originLanguageSelect.value);
-      ensureDistinctLanguages(originLanguageSelect);
+    if (!editingEntryId && !editingConceptId && !retrievedWorldLine && !originWordInput.value.trim() && !translatedWordInput.value.trim()) {
+      applyCreateAccess(true);
+    } else if (editingConceptId && conceptCatalog) {
+      const rec = conceptCatalog.byId.get(parseInt(editingConceptId, 10));
+      if (rec) renderCreateConceptInfo(rec);
+      applyCreateAccess(false);
+    } else {
+      applyCreateAccess(false);
     }
     updateManualLanguageFields();
     renderDictionaryLookupResults();
@@ -5700,6 +6523,11 @@ if (page === "create") {
   }
 
   submitBtn.addEventListener("click", async () => {
+    if (editingConceptId) {
+      saveEditingConcept();
+      return;
+    }
+    if (!createCanAddWords()) return;
     const originLang = originLanguageSelect.value;
     const translatedLang = translationLanguageSelect.value;
     const translationIsUnknown = isUnknownTranslationLang(translatedLang);
@@ -5932,6 +6760,7 @@ if (page === "draw") {
     map[String(sym.id)] = {
       selected: cfg.selected,
       customImages: cfg.customImages.slice(),
+      customArtists: (cfg.customArtists || []).slice(),
     };
     saveStoredCustomSymbolImages(map);
   }
@@ -5965,6 +6794,12 @@ if (page === "draw") {
     const variants = getVariantSources(selectedSymbol);
     if (viewingIndex < 0) viewingIndex = 0;
     if (viewingIndex >= variants.length) viewingIndex = variants.length - 1;
+    const artistEl = document.getElementById("draw-symbol-artist");
+    if (artistEl) {
+      const artist = symbolImageArtist(selectedSymbol, viewingIndex);
+      artistEl.textContent = artist ? "Drawn by: " + artist : "";
+      artistEl.hidden = !artist;
+    }
     const active = variants[viewingIndex] || variants[0];
 
     previewEl.innerHTML = "";
@@ -6114,6 +6949,7 @@ if (page === "draw") {
       if (!dataUrl.startsWith("data:image/")) return;
       const cfg = getCustomImageConfigForSymbolId(selectedSymbol.id);
       cfg.customImages.push(dataUrl);
+      cfg.customArtists.push(symbolViewerName());
       cfg.selected = cfg.customImages.length;
       saveConfigForSymbol(selectedSymbol, cfg);
       viewingIndex = cfg.selected;
@@ -6168,6 +7004,7 @@ if (page === "draw") {
       const idx = viewingIndex - 1;
       if (idx < 0 || idx >= cfg.customImages.length) return;
       cfg.customImages.splice(idx, 1);
+      if (Array.isArray(cfg.customArtists)) cfg.customArtists.splice(idx, 1);
       if (cfg.selected > cfg.customImages.length) cfg.selected = cfg.customImages.length;
       if (viewingIndex > cfg.customImages.length) viewingIndex = cfg.customImages.length;
       saveConfigForSymbol(selectedSymbol, cfg);
@@ -6704,6 +7541,7 @@ if (page === "write") {
       const defaultMatch = matches[0] || null;
       const isDefault = !!(defaultMatch && (
         (override.type === "local" && override.entryId === defaultMatch.entryId)
+        || (override.type === "concept" && override.conceptId === defaultMatch.conceptId)
         || (override.type === "world" && sameWorldSense(defaultMatch, override))
       ));
       if (isDefault) {
@@ -6866,6 +7704,8 @@ if (page === "write") {
     if (override) {
       if (override.type === "local") {
         selected = matches.find((match) => match.entryId === override.entryId) || null;
+      } else if (override.type === "concept") {
+        selected = matches.find((match) => match.conceptId === override.conceptId) || null;
       } else if (override.type === "world") {
         selected = matches.find((match) => sameWorldSense(match, override)) || null;
       }
@@ -6942,6 +7782,7 @@ if (page === "write") {
       const defaultMatch = matches[0] || null;
       const isDefault = !!(defaultMatch && (
         (override.type === "local" && override.entryId === defaultMatch.entryId)
+        || (override.type === "concept" && override.conceptId === defaultMatch.conceptId)
         || (override.type === "world" && sameWorldSense(defaultMatch, override))
       ));
       if (isDefault) return;
@@ -7063,6 +7904,7 @@ if (page === "write") {
 
   function getEntryOutputWord(entry, outputLang) {
     if (!entry || outputLang === "universal") return "";
+    if (entry.isConcept) return (entry.translations && entry.translations[outputLang]) || "";
     if (entry.isCross || (entry.worldLine && String(entry.worldLine).startsWith("CROSS\t"))) {
       const cross = entry.cross || decodeCrossWorldLine(entry.worldLine) || entry;
       if (cross.translationLang === outputLang) return cross.translation || "";
@@ -7247,9 +8089,55 @@ if (page === "write") {
     return matches;
   }
 
+  function conceptStampSymbols(rec) {
+    if (!rec || typeof symbols === "undefined") return [];
+    return conceptKanmojiIds(rec).map((stored) => {
+      const n = parseInt(stored, 10);
+      const sym = symbols.find((item) => String(item.id) === String(Math.abs(n)));
+      if (!sym) return null;
+      const ref = { id: sym.id, image: sym.image, rgb: sym.rgb, name: sym.name };
+      if (n < 0) ref.negated = true;
+      return ref;
+    }).filter(Boolean);
+  }
+
+  function getConceptMatches(token, inputLang, outputMode) {
+    if (!conceptCatalog || !inputLang) return [];
+    const recs = conceptRecsForWord(inputLang, token);
+    if (!recs.length) return [];
+    const outputLang = outputMode && outputMode !== "universal" ? outputMode : inputLang;
+    return recs.slice(0, 40).map((rec) => {
+      const translations = {};
+      CONCEPT_LANGS.forEach((code) => {
+        translations[code] = conceptShownWord(rec, code);
+      });
+      const status = learnKanmojiStatus(rec, readWordKanmoji(inputLang, token));
+      return {
+        type: "concept",
+        status: status === "unknown" ? "unstamped" : status,
+        conceptId: rec.id,
+        english: translations.en || "",
+        translation: translations[outputLang] || "",
+        origin: LANGUAGES[inputLang] || inputLang,
+        partOfSpeech: conceptShownPos(rec) || "",
+        definition: conceptShownDefinition(rec, outputLang) || conceptShownDefinition(rec, "en") || "",
+        entry: {
+          isConcept: true,
+          conceptId: rec.id,
+          stampSymbols: conceptStampSymbols(rec),
+          translations: translations,
+          definition: conceptShownDefinition(rec, "en") || "",
+        },
+        entryId: "concept:" + rec.id,
+      };
+    });
+  }
+
   function getMatchesForToken(rawWord, inputLang, outputMode) {
     const token = normalizeWord(rawWord, inputLang);
     if (!token) return [];
+    const concepts = getConceptMatches(token, inputLang, outputMode);
+    if (concepts.length) return concepts;
     return getLocalMatches(token, inputLang, outputMode).concat(getWorldMatches(token, inputLang, outputMode));
   }
 
@@ -7268,6 +8156,8 @@ if (page === "write") {
     if (override) {
       if (override.type === "local") {
         selected = matches.find((match) => match.entryId === override.entryId) || null;
+      } else if (override.type === "concept") {
+        selected = matches.find((match) => match.conceptId === override.conceptId) || null;
       } else if (override.type === "world") {
         selected = matches.find((match) => sameWorldSense(match, override)) || null;
       }
@@ -7389,7 +8279,7 @@ if (page === "write") {
       meta.className = "write-context-result-meta";
       const title = document.createElement("strong");
       const detail = document.createElement("span");
-      if (match.type === "local") {
+      if (match.type === "local" || match.type === "concept") {
         const inputLabel = getEntryDisplayWord(match.entry, displayLang) || match.definition;
         const outputLabel = outputMode !== "universal"
           ? getEntryDisplayWord(match.entry, outputMode)
@@ -7404,6 +8294,8 @@ if (page === "write") {
             || worldParts[5]
             || "";
           detail.textContent = t.worldWord + " · " + origin + (pos ? " · " + pos : "");
+        } else if (match.type === "concept") {
+          detail.textContent = [match.partOfSpeech, match.definition].filter(Boolean).join(" · ");
         } else {
           detail.textContent = t.localWord + " · " + match.status;
         }
@@ -7434,11 +8326,13 @@ if (page === "write") {
         if (activeTokenIndex < 0) return;
         const override = match.type === "local"
           ? { type: "local", entryId: match.entryId }
-          : {
-            type: "world",
-            worldLine: match.worldLine,
-            altIndex: typeof match.altIndex === "number" ? match.altIndex : 0,
-          };
+          : match.type === "concept"
+            ? { type: "concept", conceptId: match.conceptId }
+            : {
+              type: "world",
+              worldLine: match.worldLine,
+              altIndex: typeof match.altIndex === "number" ? match.altIndex : 0,
+            };
         if (contextPickerTarget === "sentence-edit") {
           editTokenOverrides[activeTokenIndex] = override;
           writeContextBox.classList.add("hidden");
@@ -7611,6 +8505,9 @@ if (page === "write") {
     });
   }
   writeInput.addEventListener("input", scheduleRenderWrite);
+  if (typeof ensureConceptCatalog === "function") {
+    ensureConceptCatalog().then(() => renderWrite());
+  }
   if (writeSaveContextsBtn) writeSaveContextsBtn.addEventListener("click", saveDirtySentenceContexts);
   if (writeSentenceSearch) writeSentenceSearch.addEventListener("input", renderSavedSentencesList);
   if (writeSentenceEditText) writeSentenceEditText.addEventListener("input", renderSentenceEditorTokens);
@@ -9319,6 +10216,8 @@ if (page === "dictionary") {
   const worldOrderCache = { en: worldDictionaryRows };
   let worldRowsByOriginCache = null;
   const selectedPairs = new Set();
+  const selectedTranslationLangs = new Set();
+  let conceptOrganize = { mode: "alpha", lang: "", picked: "" };
   const PASSWORD = ADMIN_PASSWORD;
   const EXCEPTION_LEVEL_ORDER = { red: 0, yellow: 1, blue: 2, green: 3 };
   const approvedExceptions = loadApprovedExceptionsMap();
@@ -9515,6 +10414,13 @@ if (page === "dictionary") {
   const dictionarySearchBtn = document.getElementById("dictionary-search-btn");
 
   function applyUiLanguageDictionaryDefaults() {
+    if (dictionaryUsesConcepts()) {
+      selectedTranslationLangs.clear();
+      Object.keys(LANGUAGES).forEach((code) => {
+        if (code !== getStoredLang()) selectedTranslationLangs.add(code);
+      });
+      return;
+    }
     selectedPairs.clear();
     getDefaultDictionaryPairIdsForUiLang(getStoredLang()).forEach((id) => selectedPairs.add(id));
   }
@@ -9525,7 +10431,7 @@ if (page === "dictionary") {
     const empty = document.createElement("p");
     empty.className = "dictionary-empty";
     empty.textContent = getTranslation("dictionary.selectLanguagesEmpty") ||
-      "Select languages in Show Language(s), then press Search or Enter.";
+      "Select languages in Show Translation(s) For, then press Enter.";
     list.appendChild(empty);
     if (resultsStatus) resultsStatus.textContent = "";
     pageTotals.forEach((el) => { el.textContent = "/ 1"; });
@@ -9572,8 +10478,802 @@ if (page === "dictionary") {
     if (languageOptions) languageOptions.scrollTop = scrollTop;
   }
 
+
+  function buildTranslationLanguageOptions() {
+    languageOptions.innerHTML = "";
+    const ui = getStoredLang();
+    Object.keys(LANGUAGES).forEach((code) => {
+      if (code === ui) return;
+      const row = document.createElement("div");
+      row.className = "dictionary-language-row";
+      const label = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = selectedTranslationLangs.has(code);
+      box.addEventListener("change", () => {
+        if (box.checked) selectedTranslationLangs.add(code);
+        else selectedTranslationLangs.delete(code);
+        maybeReloadAfterFilterChange();
+      });
+      label.appendChild(box);
+      label.appendChild(document.createTextNode(LANGUAGES[code] || code));
+      row.appendChild(label);
+      languageOptions.appendChild(row);
+    });
+  }
+
+  function conceptStampStatus(rec) {
+    return rec && rec.id > 0 && rec.id < 1000 ? "stamped" : "unstamped";
+  }
+
+  function sortConceptList(catalogNow, code) {
+    const source = catalogNow.lists[code];
+    if (!source || source.sorted) return;
+    const collator = new Intl.Collator(code, { sensitivity: "base", numeric: true });
+    source.sort((a, b) => collator.compare(a.words[code] || "", b.words[code] || ""));
+    source.sorted = true;
+  }
+
+  function conceptExceptionsLabeled() {
+    return !!(checkExceptionsCheckbox && checkExceptionsCheckbox.checked
+      && exceptionsModeSelect && exceptionsModeSelect.value === "labeled");
+  }
+
+  function conceptRecByQueryId(catalogNow, id) {
+    const edits = conceptUser().edits;
+    const keys = Object.keys(edits);
+    for (let i = 0; i < keys.length; i++) {
+      const edit = edits[keys[i]];
+      if (edit && Number(edit.id) === id) {
+        const found = catalogNow.byId.get(parseInt(keys[i], 10));
+        if (found) return found;
+      }
+    }
+    return catalogNow.byId.get(id) || null;
+  }
+
+  function orderConceptRecs(recs, lang) {
+    if (conceptOrganize.mode === "id") {
+      recs.sort((a, b) => conceptShownId(a) - conceptShownId(b) || a.id - b.id);
+      return recs;
+    }
+    const code = conceptOrganize.lang || lang;
+    if (code === lang) return recs;
+    const collator = new Intl.Collator(code, { sensitivity: "base", numeric: true });
+    recs.sort((a, b) => {
+      const left = conceptShownWord(a, code);
+      const right = conceptShownWord(b, code);
+      if (!left && right) return 1;
+      if (left && !right) return -1;
+      return collator.compare(left, right) || (a.id - b.id);
+    });
+    return recs;
+  }
+
+  function filterConceptRecs(catalogNow, lang, queryRaw, hideCore, selectedStatus) {
+    const sortCode = conceptOrganize.mode === "id" ? "" : (conceptOrganize.lang || lang);
+    const labeledOnly = conceptExceptionsLabeled();
+    const trimmed = String(queryRaw || "").trim();
+    const idMatch = trimmed.match(/^([CEFGIJKPRS])(\d+)$/i);
+    const numMatch = /^\d+$/.test(trimmed);
+    if (idMatch || numMatch) {
+      const id = idMatch ? parseInt(idMatch[2], 10) : parseInt(trimmed, 10);
+      const rec = conceptRecByQueryId(catalogNow, id);
+      if (!rec) return [];
+      if (hideCore && rec.id < 1000) return [];
+      if (selectedStatus !== "all" && conceptStampStatus(rec) !== selectedStatus) return [];
+      if (labeledOnly && !conceptUserLabel(rec)) return [];
+      return placeConceptLabels([rec]);
+    }
+    const query = trimmed.toLocaleLowerCase(lang);
+    if (query) {
+      const seen = new Set();
+      const found = [];
+      for (let c = 0; c < CONCEPT_LANGS.length; c++) {
+        const code = CONCEPT_LANGS[c];
+        const list = catalogNow.lists[code] || [];
+        for (let i = 0; i < list.length; i++) {
+          const rec = list[i];
+          if (seen.has(rec.id)) continue;
+          if (hideCore && rec.id < 1000) continue;
+          if (selectedStatus !== "all" && conceptStampStatus(rec) !== selectedStatus) continue;
+          if (labeledOnly && !conceptUserLabel(rec)) continue;
+          if (!conceptWordHitsQuery(conceptShownWord(rec, code), query, code)
+            && !conceptWordHitsQuery(rec.words[code], query, code)) continue;
+          seen.add(rec.id);
+          found.push(rec);
+        }
+      }
+      if (conceptOrganize.mode === "id") {
+        found.sort((a, b) => conceptShownId(a) - conceptShownId(b) || a.id - b.id);
+      } else {
+        const code = conceptOrganize.lang || lang;
+        const collator = new Intl.Collator(code, { sensitivity: "base", numeric: true });
+        found.sort((a, b) => {
+          const left = conceptShownWord(a, code);
+          const right = conceptShownWord(b, code);
+          if (!left && right) return 1;
+          if (left && !right) return -1;
+          return collator.compare(left, right) || (a.id - b.id);
+        });
+      }
+      return placeConceptLabels(found);
+    }
+    if (sortCode === lang) sortConceptList(catalogNow, lang);
+    const source = catalogNow.lists[lang] || [];
+    if (!hideCore && selectedStatus === "all" && sortCode === lang && !labeledOnly) {
+      return placeConceptLabels(source);
+    }
+    const out = [];
+    for (let i = 0; i < source.length; i++) {
+      const rec = source[i];
+      if (hideCore && rec.id < 1000) continue;
+      if (selectedStatus !== "all" && conceptStampStatus(rec) !== selectedStatus) continue;
+      if (labeledOnly && !conceptUserLabel(rec)) continue;
+      out.push(rec);
+    }
+    return placeConceptLabels(orderConceptRecs(out, lang));
+  }
+
+  function renderConceptKanmoji(host, rec, lang) {
+    const ids = conceptKanmojiIds(rec);
+    if (ids.length > 1) host.classList.add("concept-kanmoji-multi");
+    if (typeof symbols === "undefined") return;
+    ids.forEach((stored) => {
+      const n = parseInt(stored, 10);
+      const sym = symbols.find((item) => item.id === Math.abs(n));
+      if (!sym) return;
+      const label = conceptShownWord(rec, lang) || getSymbolName(sym);
+      if (n < 0) {
+        const cell = document.createElement("span");
+        cell.className = "concept-kanmoji-negated";
+        appendSymbolFace(cell, sym, label, { negated: true });
+        host.appendChild(cell);
+        return;
+      }
+      host.appendChild(createSymbolVisual(sym, label));
+    });
+  }
+
+  function renderConceptEntry(rec, lang, transLangs) {
+    const entryDiv = document.createElement("div");
+    entryDiv.className = "entry entry-concept";
+    const core = rec.id > 0 && rec.id < 1000;
+    entryDiv.classList.add(core ? "entry-core" : "entry-custom");
+    entryDiv.classList.add(core ? "entry-stamped" : "entry-unstamped");
+    entryDiv.dataset.conceptId = String(rec.id);
+    const label = conceptUserLabel(rec);
+    if (label) entryDiv.classList.add("concept-marked-" + label);
+    const kanmoji = document.createElement("button");
+    kanmoji.type = "button";
+    kanmoji.className = "concept-kanmoji";
+    kanmoji.title = getTranslation("dictionary.editKanmoji") || "Edit Kanmoji";
+    renderConceptKanmoji(kanmoji, rec, lang);
+    kanmoji.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openConceptKanmojiEditor(rec);
+    });
+    entryDiv.appendChild(kanmoji);
+    function addField(line, labelText, value, starLang) {
+      const field = document.createElement("div");
+      field.className = "world-entry-field";
+      const title = document.createElement("strong");
+      title.textContent = labelText || "";
+      const valueRow = document.createElement("span");
+      valueRow.className = "world-entry-value-row";
+      if (starLang && value && isHomographWord(value, starLang)) {
+        field.classList.add("has-homograph-star");
+        const star = document.createElement("span");
+        star.className = "homograph-star";
+        const starTitle = getTranslation("dictionary.HomographStarTitle") || getTranslation("dictionary.HomographStar") || "Homograph";
+        star.title = starTitle;
+        star.setAttribute("aria-label", starTitle);
+        star.textContent = "★";
+        valueRow.appendChild(star);
+      }
+      const fieldValue = document.createElement("span");
+      fieldValue.className = "world-entry-value";
+      fieldValue.textContent = value || "";
+      valueRow.appendChild(fieldValue);
+      field.appendChild(title);
+      field.appendChild(valueRow);
+      line.appendChild(field);
+    }
+    const words = document.createElement("div");
+    words.className = "concept-line concept-line-words";
+    const mainWord = conceptShownWord(rec, lang);
+    addField(words, LANGUAGES[lang] || lang, mainWord, mainWord ? lang : "");
+    transLangs.forEach((code) => {
+      const value = conceptShownWord(rec, code);
+      if (!value) return;
+      addField(words, LANGUAGES[code] || code, value, code);
+    });
+    const meta = document.createElement("div");
+    meta.className = "concept-line concept-line-meta";
+    addField(meta, "ID#", (LEARN_CODE_LETTER[lang] || "") + String(conceptShownId(rec)), "");
+    addField(meta, getTranslation("dictionary.partOfSpeech") || "POS", conceptShownPos(rec), "");
+    addField(meta, getTranslation("dictionary.definition") || "Definition", conceptShownDefinition(rec, lang), "");
+    entryDiv.appendChild(words);
+    entryDiv.appendChild(meta);
+    entryDiv.appendChild(buildConceptLabelDock(rec, label));
+    entryDiv.addEventListener("click", (event) => {
+      if (event.target.closest(".concept-kanmoji, .concept-label-dock")) return;
+      openConceptDetail(rec);
+    });
+    list.appendChild(entryDiv);
+  }
+
+  function paintConceptPage(recs, lang) {
+    if (!list) return;
+    list.innerHTML = "";
+    const pageInfo = updateDictionaryPagination(recs.length, recs.length);
+    const slice = recs.slice(pageInfo.startIndex, pageInfo.endIndex);
+    const transLangs = Object.keys(LANGUAGES).filter((code) => code !== lang && selectedTranslationLangs.has(code));
+    if (!slice.length) {
+      const empty = document.createElement("p");
+      empty.className = "dictionary-empty";
+      empty.textContent = getTranslation("dictionary.noResults") || "No matching words.";
+      list.appendChild(empty);
+      return;
+    }
+    slice.forEach((rec) => renderConceptEntry(rec, lang, transLangs));
+  }
+
+  async function loadConceptEntriesAsync() {
+    const loadToken = ++dictionaryLoadToken;
+    const lang = getStoredLang();
+    const queryRaw = (searchBar.value || "").trim();
+    const selectedStatus = stampFilter ? stampFilter.value : "all";
+    const hideCore = !!(hideCoreWordsCheckbox && hideCoreWordsCheckbox.checked);
+    const showProgress = dictionaryLoadingCount > 0;
+    const filterKey = buildDictionaryFilterKey();
+    if (showProgress) setDictionaryLoadingProgress(5, "dictionary.loadingIndexes", 15);
+    const catalogNow = await ensureConceptCatalog((frac) => {
+      if (showProgress) setDictionaryLoadingProgress(Math.round(frac * 100), "dictionary.loadingIndexes", 15 + Math.round(frac * 70));
+    });
+    if (loadToken !== dictionaryLoadToken) return;
+    let recs = dictionaryViewCache && dictionaryViewCache.key === filterKey ? dictionaryViewCache.recs : null;
+    if (!recs) {
+      recs = filterConceptRecs(catalogNow, lang, queryRaw, hideCore, selectedStatus);
+      dictionaryViewCache = { key: filterKey, mode: "concepts", recs: recs };
+    }
+    if (showProgress) setDictionaryLoadingProgress(100, "dictionary.loadingList", 96);
+    await yieldDictionaryUi();
+    if (loadToken !== dictionaryLoadToken) return;
+    paintConceptPage(recs, lang);
+  }
+
+
+  let kanmojiEditRec = null;
+  let kanmojiEditIds = [];
+  let conceptDetailRecs = [];
+  let conceptDetailIndex = -1;
+  let conceptPeeking = false;
+  let conceptPeekBox = null;
+
+  function refreshConceptList() {
+    invalidateConceptUserCache();
+    dictionaryViewCache = null;
+    if (dictionaryHasSearched) loadEntries();
+    else void runDictionarySearch();
+  }
+
+  function setConceptLabel(rec, color) {
+    const state = readConceptUserState();
+    const key = String(rec.id);
+    if (state.labels[key] === color) delete state.labels[key];
+    else state.labels[key] = color;
+    writeConceptUserState(state);
+    refreshConceptList();
+  }
+
+  function buildConceptLabelDock(rec, label) {
+    const dock = document.createElement("div");
+    dock.className = "concept-label-dock" + (label ? " is-" + label : "");
+    const tray = document.createElement("div");
+    tray.className = "concept-label-tray";
+    ["green", "yellow", "red"].forEach((color) => {
+      const swatch = document.createElement("button");
+      swatch.type = "button";
+      swatch.className = "concept-label-swatch concept-label-" + color;
+      if (label === color) swatch.classList.add("is-selected");
+      const names = { green: "dictionary.labelGreen", yellow: "dictionary.labelYellow", red: "dictionary.labelRed" };
+      const fallback = { green: "Green", yellow: "Yellow", red: "Red" };
+      swatch.title = getTranslation(names[color]) || fallback[color];
+      swatch.setAttribute("aria-label", swatch.title);
+      swatch.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setConceptLabel(rec, color);
+      });
+      tray.appendChild(swatch);
+    });
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "concept-label-handle";
+    handle.title = getTranslation("dictionary.exceptionsLabeled") || "Labeled";
+    handle.setAttribute("aria-label", handle.title);
+    handle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const open = dock.classList.contains("is-open");
+      document.querySelectorAll(".concept-label-dock.is-open").forEach((el) => el.classList.remove("is-open"));
+      if (!open) dock.classList.add("is-open");
+    });
+    dock.appendChild(tray);
+    dock.appendChild(handle);
+    return dock;
+  }
+
+  function fillConceptInfo(host, rec, compact) {
+    host.textContent = "";
+    const lang = getStoredLang();
+    const word = document.createElement("div");
+    word.className = "concept-peek-word";
+    word.textContent = conceptShownWord(rec, lang) || "";
+    host.appendChild(word);
+    const lines = document.createElement("div");
+    lines.className = "concept-peek-lines";
+    CONCEPT_LANGS.forEach((code) => {
+      if (code === lang) return;
+      const value = conceptShownWord(rec, code);
+      if (!value) return;
+      const line = document.createElement("div");
+      line.textContent = (LANGUAGES[code] || code) + "  " + value;
+      lines.appendChild(line);
+    });
+    host.appendChild(lines);
+    const meta = document.createElement("div");
+    meta.className = "concept-peek-meta";
+    const pos = conceptShownPos(rec);
+    const def = conceptShownDefinition(rec, lang);
+    const bits = ["ID# " + (LEARN_CODE_LETTER[lang] || "") + conceptShownId(rec)];
+    bits.push((getTranslation("dictionary.partOfSpeech") || "POS") + " " + pos);
+    bits.push((getTranslation("dictionary.definition") || "Definition") + " " + def);
+    meta.textContent = bits.join("   ");
+    host.appendChild(meta);
+    if (!compact) return;
+  }
+
+  function updateConceptDetailNav() {
+    const prev = document.getElementById("concept-detail-prev");
+    const next = document.getElementById("concept-detail-next");
+    const prevWord = document.getElementById("concept-detail-prev-word");
+    const nextWord = document.getElementById("concept-detail-next-word");
+    const position = document.getElementById("concept-detail-position");
+    const lang = getStoredLang();
+    const index = conceptDetailIndex;
+    const list = conceptDetailRecs;
+    const hasPrev = index > 0;
+    const hasNext = index >= 0 && index < list.length - 1;
+    if (prev) {
+      prev.disabled = !hasPrev;
+      prev.title = getTranslation("dictionary.previousPage") || "Previous";
+    }
+    if (next) {
+      next.disabled = !hasNext;
+      next.title = getTranslation("dictionary.nextPage") || "Next";
+    }
+    if (prevWord) prevWord.textContent = hasPrev ? (conceptShownWord(list[index - 1], lang) || "") : "";
+    if (nextWord) nextWord.textContent = hasNext ? (conceptShownWord(list[index + 1], lang) || "") : "";
+    if (position) position.textContent = index >= 0 && list.length ? (index + 1) + " / " + list.length : "";
+  }
+
+  function stepConceptDetail(delta) {
+    const next = conceptDetailIndex + delta;
+    if (!conceptDetailRecs[next]) return;
+    openConceptDetail(conceptDetailRecs[next], true);
+  }
+
+  function openConceptDetail(rec, keepList) {
+    const modal = document.getElementById("concept-detail");
+    const body = document.getElementById("concept-detail-body");
+    const saveBtn = document.getElementById("concept-detail-save");
+    if (!modal || !body || !saveBtn || !rec) return;
+    if (!keepList) {
+      const live = dictionaryViewCache && dictionaryViewCache.recs;
+      if (live && live.length) conceptDetailRecs = live;
+    }
+    conceptDetailIndex = conceptDetailRecs.findIndex((item) => item === rec || (item && item.id === rec.id));
+    body.textContent = "";
+    body.scrollTop = 0;
+    const lang = getStoredLang();
+    const admin = isAdminMode();
+    let editable = false;
+    const inputs = { words: {}, definition: null, pos: null, id: null };
+    const kanmoji = document.createElement("button");
+    kanmoji.type = "button";
+    kanmoji.className = "concept-kanmoji concept-detail-kanmoji";
+    kanmoji.title = getTranslation("dictionary.editKanmoji") || "Edit Kanmoji";
+    renderConceptKanmoji(kanmoji, rec, lang);
+    kanmoji.addEventListener("click", () => openConceptKanmojiEditor(rec));
+    body.appendChild(kanmoji);
+    const grid = document.createElement("div");
+    grid.className = "concept-detail-grid";
+    CONCEPT_LANGS.forEach((code) => {
+      const name = document.createElement("span");
+      name.textContent = LANGUAGES[code] || code;
+      grid.appendChild(name);
+      const can = aficCanEditLanguage(code);
+      const wordValue = conceptShownWord(rec, code);
+      if (can) {
+        editable = true;
+        const wordInput = document.createElement("input");
+        wordInput.type = "text";
+        wordInput.lang = code;
+        wordInput.value = wordValue;
+        wordInput.className = "concept-detail-input";
+        inputs.words[code] = wordInput;
+        grid.appendChild(wordInput);
+      } else {
+        const wordSpan = document.createElement("span");
+        wordSpan.lang = code;
+        wordSpan.textContent = wordValue;
+        grid.appendChild(wordSpan);
+      }
+    });
+    const posLabel = document.createElement("span");
+    posLabel.textContent = getTranslation("dictionary.partOfSpeech") || "POS";
+    grid.appendChild(posLabel);
+    if (admin) {
+      editable = true;
+      const posInput = document.createElement("input");
+      posInput.type = "text";
+      posInput.value = conceptShownPos(rec);
+      posInput.className = "concept-detail-input concept-detail-span";
+      inputs.pos = posInput;
+      grid.appendChild(posInput);
+    } else {
+      const posSpan = document.createElement("span");
+      posSpan.className = "concept-detail-span";
+      posSpan.textContent = conceptShownPos(rec);
+      grid.appendChild(posSpan);
+    }
+    const idLabel = document.createElement("span");
+    idLabel.textContent = "ID#";
+    grid.appendChild(idLabel);
+    const idWrap = document.createElement("span");
+    idWrap.className = "concept-detail-span concept-detail-id";
+    const letter = document.createElement("span");
+    letter.textContent = LEARN_CODE_LETTER[lang] || "";
+    idWrap.appendChild(letter);
+    if (admin) {
+      editable = true;
+      const idInput = document.createElement("input");
+      idInput.type = "number";
+      idInput.min = "1";
+      idInput.value = String(conceptShownId(rec));
+      idInput.className = "concept-detail-input";
+      inputs.id = idInput;
+      idWrap.appendChild(idInput);
+    } else {
+      idWrap.appendChild(document.createTextNode(String(conceptShownId(rec))));
+    }
+    grid.appendChild(idWrap);
+    body.appendChild(grid);
+    const defWrap = document.createElement("div");
+    defWrap.className = "concept-detail-definition";
+    const defLabel = document.createElement("strong");
+    defLabel.textContent = getTranslation("dictionary.definition") || "Definition";
+    defWrap.appendChild(defLabel);
+    const defValue = conceptShownDefinition(rec, lang);
+    if (aficCanEditLanguage(lang)) {
+      editable = true;
+      const defInput = document.createElement("textarea");
+      defInput.rows = 4;
+      defInput.lang = lang;
+      defInput.value = defValue;
+      defInput.className = "concept-detail-input";
+      inputs.definition = defInput;
+      defWrap.appendChild(defInput);
+    } else {
+      const defText = document.createElement("p");
+      defText.lang = lang;
+      defText.textContent = defValue;
+      defWrap.appendChild(defText);
+    }
+    body.appendChild(defWrap);
+    saveBtn.classList.toggle("hidden", !editable);
+    saveBtn.onclick = () => {
+      const state = readConceptUserState();
+      const key = String(rec.id);
+      const previous = state.edits[key] || {};
+      const edit = {
+        words: Object.assign({}, previous.words),
+        definitions: Object.assign({}, previous.definitions),
+      };
+      if (previous.pos != null) edit.pos = previous.pos;
+      if (previous.id != null) edit.id = previous.id;
+      CONCEPT_LANGS.forEach((code) => {
+        if (!inputs.words[code]) return;
+        const nextWord = aficClean(inputs.words[code].value);
+        if (nextWord === (rec.words[code] || "")) delete edit.words[code];
+        else edit.words[code] = nextWord;
+      });
+      if (inputs.definition) {
+        const nextDef = aficClean(inputs.definition.value);
+        if (nextDef === (rec.definition || "")) delete edit.definitions[lang];
+        else edit.definitions[lang] = nextDef;
+      }
+      if (admin && inputs.pos) {
+        const pos = aficClean(inputs.pos.value);
+        if (pos === (rec.pos || "")) delete edit.pos;
+        else edit.pos = pos;
+      }
+      if (admin && inputs.id) {
+        const n = parseInt(inputs.id.value, 10);
+        if (n > 0) {
+          const taken = conceptOccupantOfShownId(n, rec.id);
+          if (taken) {
+            const ui = getStoredLang();
+            const letter = LEARN_CODE_LETTER[ui] || "";
+            const next = nextFreeConceptShownId(n);
+            const word = conceptShownWord(taken, ui) || conceptShownWord(taken, taken.origin) || String(taken.id);
+            alert(formatTranslation("dictionary.idTaken", {
+              id: letter + n,
+              word: word,
+              next: letter + next,
+            }));
+            inputs.id.value = String(next);
+            return;
+          }
+          if (n !== rec.id) edit.id = n;
+          else delete edit.id;
+        }
+      }
+      const empty = !Object.keys(edit.words).length && !Object.keys(edit.definitions).length && edit.pos == null && edit.id == null;
+      if (empty) delete state.edits[key];
+      else state.edits[key] = edit;
+      writeConceptUserState(state);
+      modal.classList.add("hidden");
+      refreshConceptList();
+    };
+    updateConceptDetailNav();
+    modal.classList.remove("hidden");
+  }
+
+  function paintKanmojiEditor() {
+    const current = document.getElementById("concept-kanmoji-current");
+    const grid = document.getElementById("concept-kanmoji-grid");
+    if (!current || !grid) return;
+    current.textContent = "";
+    kanmojiEditIds.forEach((id) => {
+      if (typeof symbols === "undefined") return;
+      const sym = symbols.find((item) => item.id === id);
+      if (!sym) return;
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "concept-kanmoji-chip";
+      chip.title = getSymbolName(sym);
+      chip.appendChild(createSymbolVisual(sym, getSymbolName(sym)));
+      chip.addEventListener("click", () => {
+        kanmojiEditIds = kanmojiEditIds.filter((item) => item !== id);
+        paintKanmojiEditor();
+      });
+      current.appendChild(chip);
+    });
+    grid.textContent = "";
+    if (typeof symbols === "undefined") return;
+    symbols.forEach((sym) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "concept-kanmoji-pick";
+      if (kanmojiEditIds.indexOf(sym.id) >= 0) btn.classList.add("is-selected");
+      btn.title = getSymbolName(sym);
+      btn.appendChild(createSymbolVisual(sym, getSymbolName(sym)));
+      const caption = document.createElement("span");
+      caption.textContent = getSymbolName(sym);
+      btn.appendChild(caption);
+      btn.addEventListener("click", () => {
+        const index = kanmojiEditIds.indexOf(sym.id);
+        if (index >= 0) kanmojiEditIds.splice(index, 1);
+        else if (kanmojiEditIds.length < 4) kanmojiEditIds.push(sym.id);
+        paintKanmojiEditor();
+      });
+      grid.appendChild(btn);
+    });
+  }
+
+  function openConceptKanmojiEditor(rec) {
+    const box = document.getElementById("concept-kanmoji-box");
+    if (!box) return;
+    kanmojiEditRec = rec;
+    kanmojiEditIds = conceptKanmojiIds(rec).slice();
+    paintKanmojiEditor();
+    box.classList.remove("hidden");
+  }
+
+  function saveConceptKanmoji() {
+    if (!kanmojiEditRec) return;
+    const state = readConceptUserState();
+    const key = String(kanmojiEditRec.id);
+    const fallback = kanmojiEditRec.id > 0 && kanmojiEditRec.id < 1000 ? [kanmojiEditRec.id] : [];
+    const same = kanmojiEditIds.length === fallback.length && kanmojiEditIds.every((id, index) => id === fallback[index]);
+    if (same) delete state.kanmoji[key];
+    else state.kanmoji[key] = kanmojiEditIds.slice();
+    writeConceptUserState(state);
+    const box = document.getElementById("concept-kanmoji-box");
+    if (box) box.classList.add("hidden");
+    refreshConceptList();
+    const detail = document.getElementById("concept-detail");
+    if (detail && !detail.classList.contains("hidden")) openConceptDetail(kanmojiEditRec, true);
+  }
+
+  function conceptPeekTarget(node) {
+    if (!node || !node.closest) return null;
+    if (node.closest(".concept-label-dock")) return null;
+    return node.closest("#dictionary-list .entry-concept");
+  }
+
+  function placeConceptPeek(box) {
+    const peek = document.getElementById("concept-peek");
+    if (!peek) return;
+    const rect = box.getBoundingClientRect();
+    peek.classList.remove("hidden");
+    peek.style.maxHeight = "none";
+    const natural = peek.offsetHeight;
+    const width = peek.offsetWidth || 320;
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+    const below = natural <= spaceBelow || spaceBelow >= spaceAbove;
+    const height = Math.max(0, Math.min(natural, below ? spaceBelow : spaceAbove));
+    const top = below ? rect.bottom + 8 : Math.max(8, rect.top - 8 - height);
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+    peek.style.maxHeight = height + "px";
+    peek.style.top = top + "px";
+    peek.style.left = left + "px";
+  }
+
+  function showConceptPeek(box) {
+    if (!conceptCatalog) return;
+    const rec = conceptCatalog.byId.get(parseInt(box.dataset.conceptId, 10));
+    if (!rec) return;
+    const peek = document.getElementById("concept-peek");
+    if (!peek) return;
+    if (conceptPeekBox !== box) {
+      fillConceptInfo(peek, rec, true);
+      if (conceptPeekBox) conceptPeekBox.classList.remove("is-peeked");
+      conceptPeekBox = box;
+      box.classList.add("is-peeked");
+    }
+    placeConceptPeek(box);
+  }
+
+  function endConceptPeek() {
+    conceptPeeking = false;
+    if (conceptPeekBox) conceptPeekBox.classList.remove("is-peeked");
+    conceptPeekBox = null;
+    const peek = document.getElementById("concept-peek");
+    if (peek) peek.classList.add("hidden");
+  }
+
+  function wireConceptChrome() {
+    const detail = document.getElementById("concept-detail");
+    const detailClose = document.getElementById("concept-detail-close");
+    const kanmojiBox = document.getElementById("concept-kanmoji-box");
+    const kanmojiSave = document.getElementById("concept-kanmoji-save");
+    const kanmojiClear = document.getElementById("concept-kanmoji-clear");
+    const kanmojiCancel = document.getElementById("concept-kanmoji-cancel");
+    const detailPrev = document.getElementById("concept-detail-prev");
+    const detailNext = document.getElementById("concept-detail-next");
+    if (detailPrev) detailPrev.addEventListener("click", () => stepConceptDetail(-1));
+    if (detailNext) detailNext.addEventListener("click", () => stepConceptDetail(1));
+    if (detailClose) detailClose.addEventListener("click", () => detail.classList.add("hidden"));
+    if (detail) {
+      detail.addEventListener("click", (event) => {
+        if (event.target === detail) detail.classList.add("hidden");
+      });
+    }
+    if (kanmojiSave) kanmojiSave.addEventListener("click", saveConceptKanmoji);
+    if (kanmojiClear) {
+      kanmojiClear.addEventListener("click", () => {
+        kanmojiEditIds = [];
+        paintKanmojiEditor();
+      });
+    }
+    if (kanmojiCancel && kanmojiBox) kanmojiCancel.addEventListener("click", () => kanmojiBox.classList.add("hidden"));
+    if (kanmojiBox) {
+      kanmojiBox.addEventListener("click", (event) => {
+        if (event.target === kanmojiBox) kanmojiBox.classList.add("hidden");
+      });
+    }
+    document.addEventListener("mousedown", (event) => {
+      if (event.button !== 2) return;
+      const box = conceptPeekTarget(event.target);
+      if (!box) return;
+      event.preventDefault();
+      conceptPeeking = true;
+      showConceptPeek(box);
+    });
+    document.addEventListener("mousemove", (event) => {
+      if (!conceptPeeking) return;
+      if (!(event.buttons & 2)) {
+        endConceptPeek();
+        return;
+      }
+      const box = conceptPeekTarget(event.target);
+      if (box) showConceptPeek(box);
+    });
+    document.addEventListener("mouseup", (event) => {
+      if (event.button === 2) endConceptPeek();
+    });
+    document.addEventListener("contextmenu", (event) => {
+      if (conceptPeekTarget(event.target) || conceptPeeking) event.preventDefault();
+    });
+    document.addEventListener("click", (event) => {
+      if (event.target.closest && event.target.closest(".concept-label-dock")) return;
+      document.querySelectorAll(".concept-label-dock.is-open").forEach((el) => el.classList.remove("is-open"));
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        if (detail && !detail.classList.contains("hidden")) detail.classList.add("hidden");
+        if (kanmojiBox && !kanmojiBox.classList.contains("hidden")) kanmojiBox.classList.add("hidden");
+        endConceptPeek();
+        return;
+      }
+      if (!detail || detail.classList.contains("hidden")) return;
+      if (kanmojiBox && !kanmojiBox.classList.contains("hidden")) return;
+      const tag = (event.target && event.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        stepConceptDetail(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        stepConceptDetail(1);
+      }
+    });
+    window.addEventListener("blur", endConceptPeek);
+  }
+
+  function buildConceptOrganizeOptions() {
+    const box = document.getElementById("dictionary-organize-options");
+    if (!box) return;
+    box.innerHTML = "";
+    const ui = getStoredLang();
+    const picked = conceptOrganize.picked || ui;
+    const alphaLabel = getTranslation("dictionary.alphabetical") || "Alphabetical";
+    Object.keys(LANGUAGES).forEach((code) => {
+      const row = document.createElement("div");
+      row.className = "concept-organize-row";
+      const name = document.createElement("span");
+      name.textContent = LANGUAGES[code] || code;
+      row.appendChild(name);
+      [["alpha", alphaLabel], ["id", "ID#"]].forEach(([mode, label]) => {
+        const choice = document.createElement("label");
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = "dictionary-organize";
+        radio.checked = picked === code && conceptOrganize.mode === mode;
+        radio.addEventListener("change", () => {
+          if (!radio.checked) return;
+          conceptOrganize = { mode: mode, lang: mode === "alpha" ? code : "", picked: code };
+          const panel = document.getElementById("dictionary-organize");
+          if (panel) panel.removeAttribute("open");
+          if (!dictionaryHasSearched) {
+            buildConceptOrganizeOptions();
+            return;
+          }
+          currentPage = 1;
+          dictionaryViewCache = null;
+          loadEntries();
+          buildConceptOrganizeOptions();
+        });
+        choice.appendChild(radio);
+        choice.appendChild(document.createTextNode(" " + label));
+        row.appendChild(choice);
+      });
+      box.appendChild(row);
+    });
+  }
+
   function buildLanguageOptions() {
     if (!languageOptions) return;
+    if (dictionaryUsesConcepts()) {
+      buildTranslationLanguageOptions();
+      return;
+    }
     languageOptions.innerHTML = "";
     const worldSelected = isWorldDictionarySelected();
     const worldPartial = isWorldDictionaryPartial();
@@ -9673,13 +11373,17 @@ if (page === "dictionary") {
     starsOpt.value = "stars";
     starsOpt.textContent = getTranslation("dictionary.exceptionsStars") || "Star";
     exceptionsModeSelect.appendChild(starsOpt);
+    const labeledOpt = document.createElement("option");
+    labeledOpt.value = "labeled";
+    labeledOpt.textContent = getTranslation("dictionary.exceptionsLabeled") || "Labeled";
+    exceptionsModeSelect.appendChild(labeledOpt);
     Object.keys(LANGUAGES).forEach((code) => {
       const opt = document.createElement("option");
       opt.value = code;
       opt.textContent = LANGUAGES[code];
       exceptionsModeSelect.appendChild(opt);
     });
-    const allowed = saved === "symbols" || saved === "stars" || LANGUAGES[saved];
+    const allowed = saved === "symbols" || saved === "stars" || saved === "labeled" || LANGUAGES[saved];
     exceptionsModeSelect.value = allowed ? saved : "symbols";
   }
 
@@ -10934,6 +12638,10 @@ if (page === "dictionary") {
   }
 
   async function loadEntriesAsync() {
+    if (dictionaryUsesConcepts()) {
+      await loadConceptEntriesAsync();
+      return;
+    }
     const loadToken = ++dictionaryLoadToken;
     const lang = getStoredLang();
     const queryRaw = (searchBar.value || "").trim();
@@ -10946,7 +12654,7 @@ if (page === "dictionary") {
       : "symbols";
     const checkStarExceptions = exceptionsEnabled && exceptionsMode === "stars";
     const checkSymbolExceptions = exceptionsEnabled && exceptionsMode === "symbols";
-    const checkLanguageExceptions = exceptionsEnabled && exceptionsMode !== "symbols" && exceptionsMode !== "stars";
+    const checkLanguageExceptions = exceptionsEnabled && exceptionsMode !== "symbols" && exceptionsMode !== "stars" && exceptionsMode !== "labeled";
     const exceptionsOnly = checkLanguageExceptions || checkSymbolExceptions || checkStarExceptions;
     const hideCore = !!(hideCoreWordsCheckbox && hideCoreWordsCheckbox.checked);
     // Progress overlay is only for the initial bootstrap.
@@ -11374,6 +13082,12 @@ if (page === "dictionary") {
     const checkLanguageExceptions = exceptionsEnabled && exceptionsMode !== "symbols" && exceptionsMode !== "stars";
     const exceptionsOnly = checkLanguageExceptions || checkSymbolExceptions || checkStarExceptions;
     const hideCore = !!(hideCoreWordsCheckbox && hideCoreWordsCheckbox.checked);
+    const selection = dictionaryUsesConcepts()
+      ? ("concept:" + Array.from(selectedTranslationLangs).sort().join(","))
+      : Array.from(selectedPairs).sort().join(",");
+    const organize = dictionaryUsesConcepts()
+      ? (conceptOrganize.mode + ":" + (conceptOrganize.lang || lang))
+      : "";
     return [
       lang,
       query,
@@ -11381,13 +13095,14 @@ if (page === "dictionary") {
       exceptionsOnly ? "1" : "0",
       exceptionsMode,
       hideCore ? "1" : "0",
-      Array.from(selectedPairs).sort().join(","),
+      selection,
+      organize,
     ].join("|");
   }
 
   async function runDictionarySearch() {
     if (dictionarySearchInFlight) return;
-    if (!selectedPairs.size) {
+    if (!dictionaryUsesConcepts() && !selectedPairs.size) {
       dictionaryHasSearched = false;
       dictionaryViewCache = null;
       showDictionaryIdlePrompt();
@@ -11403,7 +13118,7 @@ if (page === "dictionary") {
       const cacheHit = !!(dictionaryViewCache && dictionaryViewCache.key === nextKey);
       if (!cacheHit) dictionaryViewCache = null;
       showDictionaryLoading(cacheHit ? "dictionary.loadingList" : "dictionary.loadingFile");
-      if (!cacheHit) {
+      if (!cacheHit && !dictionaryUsesConcepts()) {
         await ensureDictionaryIndexesReady();
         setDictionaryLoadingProgress(0, "dictionary.loadingList", 70);
         await yieldDictionaryUi();
@@ -11819,7 +13534,10 @@ if (page === "dictionary") {
 
   // --- Search, filters, and pagination ---
   function maybeReloadAfterFilterChange() {
-    if (!dictionaryHasSearched) return;
+    if (!dictionaryHasSearched) {
+      void runDictionarySearch();
+      return;
+    }
     currentPage = 1;
     loadEntries();
   }
@@ -11844,6 +13562,10 @@ if (page === "dictionary") {
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     if (event.defaultPrevented) return;
+    const conceptDetail = document.getElementById("concept-detail");
+    const conceptKanmoji = document.getElementById("concept-kanmoji-box");
+    if (conceptDetail && !conceptDetail.classList.contains("hidden")) return;
+    if (conceptKanmoji && !conceptKanmoji.classList.contains("hidden")) return;
     const tag = (event.target && event.target.tagName) || "";
     if (tag === "TEXTAREA" || tag === "BUTTON" || tag === "A" || tag === "SUMMARY" || tag === "SELECT") return;
     if (event.target && event.target.isContentEditable) return;
@@ -11897,6 +13619,7 @@ if (page === "dictionary") {
   window.onLanguageChange = () => {
     applyUiLanguageDictionaryDefaults();
     buildLanguageOptions();
+    buildConceptOrganizeOptions();
     buildExceptionsModeSelect();
     currentPage = 1;
     void runDictionarySearch();
@@ -11908,7 +13631,9 @@ if (page === "dictionary") {
 
   applyUiLanguageDictionaryDefaults();
   buildLanguageOptions();
+  buildConceptOrganizeOptions();
   buildExceptionsModeSelect();
+  wireConceptChrome();
   void runDictionarySearch();
 }
 
@@ -12508,6 +14233,20 @@ function readKanversionStore(key) {
 
 function readKanversionState() {
   return { kanmoji: readKanversionStore(KANVERSION_KANMOJI_KEY), images: readKanversionStore(KANVERSION_IMAGES_KEY) };
+}
+
+function writeKanversionKanmoji(unitKey, ids) {
+  if (!unitKey) return false;
+  const map = readKanversionStore(KANVERSION_KANMOJI_KEY);
+  const next = (ids || []).map((id) => parseInt(id, 10)).filter((id) => id > 0).slice(0, 2);
+  if (next.length) map[unitKey] = next;
+  else delete map[unitKey];
+  try {
+    localStorage.setItem(KANVERSION_KANMOJI_KEY, JSON.stringify(map));
+    return true;
+  } catch (err) {
+    return false;
+  }
 }
 
 const isKanversionDone = (key, state) => (key.startsWith("C:") ? !!state.images[key] : state.kanmoji[key] != null);
@@ -15546,26 +17285,33 @@ if (page === "learn") {
     if (curricula.has(id)) return done();
     const [prefix, global] = AREA_DATA[area];
     const pair = `${getStoredLang()}-${code}`;
-    const script = document.createElement("script");
-    script.src = `NewLearn/data/${prefix}-${pair}.js?v=0.9`;
-    script.onload = script.onerror = () => {
-      const data = (window[global] || {})[pair];
+    const finish = (data) => {
       const seen = new Set();
       const lessons = (Array.isArray(data) ? data : []).map(([, rows]) => {
         const keys = [];
         (rows || []).forEach((row) => {
           const word = String(row).split("\t")[0];
-          const key = `${code}|${word}`;
-          if (!word || keys.includes(key)) return;
-          keys.push(key);
-          seen.add(key);
+          if (!word) return;
+          keys.push(learnStudyKey(code + "|", word, seen));
         });
         return keys;
       });
       curricula.set(id, { lessons: lessons.filter((keys) => keys.length), total: seen.size });
       done();
     };
-    document.head.appendChild(script);
+    if (prefix === "alphabet") {
+      const script = document.createElement("script");
+      script.src = `NewLearn/data/${prefix}-${pair}.js?v=0.9`;
+      script.onload = script.onerror = () => {
+        const data = (window[global] || {})[pair];
+        if (window[global]) delete window[global][pair];
+        script.remove();
+        finish(data);
+      };
+      document.head.appendChild(script);
+      return;
+    }
+    loadLearnLessons(prefix, pair).then(finish).catch(() => finish(null));
   }
 
   const ratio = (n, total) => `${n} / ${total}${total ? ` (${Math.floor((n / total) * 100)}%)` : ""}`;
@@ -15921,6 +17667,7 @@ if (page === "learn-area") {
       if (detailItem === item) paintDetailStar();
       if (starredOnly && !starred.has(item.statKey)) rebuild();
     });
+    bindStarCustomMenu(star, () => customLearnItem(area, lang, item.statKey, item.text, item.label, item.reading));
     const glyph = document.createElement("div");
     glyph.className = "kanji-box-glyph";
     glyph.lang = lang;
@@ -16052,15 +17799,15 @@ if (page === "learn-area") {
       lesson += 1;
       rows.forEach((row) => {
         const [word, reading, meaningText] = String(row).split("\t");
-        if (!word || seen.has(word)) return;
-        seen.add(word);
+        if (!word) return;
+        const statKey = learnStudyKey(lang + "|", word, seen);
         const edited = aficLearnOverride(area, getStoredLang(), lang, word);
         const shown = aficLearnWordOverride(area, getStoredLang(), lang, word) || word;
         const label = edited || String(meaningText || "").trim();
         const item = {
-          id: area + "|" + lang + "|" + word,
+          id: area + "|" + statKey,
           kind: area,
-          statKey: lang + "|" + word,
+          statKey,
           text: shown,
           sourceText: word,
           label,
@@ -16234,19 +17981,7 @@ if (page === "learn-area") {
   }
 
   function loadScript(prefix, pairName) {
-    const globalName = prefix === "vocab" ? "LEARN_VOCAB" : "LEARN_SENTENCES";
-    return new Promise((resolve) => {
-      const ready = () => (window[globalName] || {})[pairName];
-      if (ready()) {
-        resolve(ready());
-        return;
-      }
-      const script = document.createElement("script");
-      script.src = `NewLearn/data/${prefix}-${pairName}.js?v=0.9`;
-      script.onload = () => resolve(ready() || null);
-      script.onerror = () => resolve(null);
-      document.head.appendChild(script);
-    });
+    return loadLearnLessons(prefix, pairName);
   }
 
   function node(tag, className, text) {
@@ -16522,6 +18257,12 @@ if (page === "learn-area") {
       detailStarChanged = true;
     }
   });
+  detailStar.addEventListener("contextmenu", (event) => {
+    if (!detailItem) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openCustomStarMenu(detailStar, customLearnItem(detailItem.kind, lang, detailItem.statKey, detailItem.text, detailItem.label, detailItem.reading));
+  });
   detailModal.addEventListener("click", (e) => {
     if (e.target === detailModal) {
       closeDetail();
@@ -16593,6 +18334,7 @@ if (page === "learn-area") {
 
   document.addEventListener("mousedown", (e) => {
     if (e.button !== 2) return;
+    if (e.target.closest && e.target.closest(".kanji-star, #kanji-detail-star, .custom-star-menu")) return;
     const box = peekTargetOf(e.target);
     if (!box) return;
     e.preventDefault();
@@ -16693,12 +18435,14 @@ if (page === "learn-area") {
     loadRelated();
   }
   if (readyData()) start(readyData());
-  else {
+  else if (PREFIX === "alphabet") {
     const script = document.createElement("script");
     script.src = `NewLearn/data/${PREFIX}-${pair}.js?v=0.9`;
     script.onload = () => start(readyData());
     script.onerror = () => start(null);
     document.head.appendChild(script);
+  } else {
+    loadLearnLessons(PREFIX, pair).then((data) => start(data)).catch(() => start(null));
   }
   }
 }
@@ -16805,13 +18549,27 @@ function oxKeybindHint(id) {
   return code ? oxKeybindDisplay(code) : "";
 }
 
+function oxJudgeWord(choice) {
+  return getTranslation(choice === "o" ? "learn.oxYes" : "learn.oxNo");
+}
+
 function appendOxHint(button, id) {
   const text = oxKeybindHint(id);
   if (!text) return;
   const mark = document.createElement("span");
   mark.className = "ox-key-hint";
   mark.textContent = text;
+  mark.setAttribute("aria-hidden", "true");
   button.append(mark);
+}
+
+function paintOxJudge(button, choice) {
+  button.textContent = "";
+  const word = document.createElement("span");
+  word.className = "ox-judge-word";
+  word.textContent = oxJudgeWord(choice);
+  button.append(word);
+  appendOxHint(button, choice);
 }
 
 function oxKeybindAction(code) {
@@ -16846,12 +18604,1603 @@ function runOxKeybind(event, code, round, judgeFn, pickFn) {
 }
 
 /* --------------------------------
+   SHOW KANMOJI
+   One setting for every lesson. Dictionary symbols sit above the word they name, using the
+   Write stamp rules. Kanji cards show the Kanversion above the character.
+-------------------------------- */
+const LEARN_KANMOJI_KEY = "kbShowKanmoji";
+let learnKanmojiMaps = null;
+let learnKanmojiSense = new Map();
+let learnKanmojiLoading = null;
+let learnKanmojiBox = null;
+
+function learnShowKanmoji() {
+  return localStorage.getItem(LEARN_KANMOJI_KEY) === "1";
+}
+
+function setLearnShowKanmoji(on) {
+  localStorage.setItem(LEARN_KANMOJI_KEY, on ? "1" : "0");
+}
+
+function learnKanmojiReady() {
+  return !!(conceptCatalog && typeof symbols !== "undefined" && symbols.length);
+}
+
+function ensureLearnSymbols() {
+  if (typeof symbols !== "undefined" && symbols.length) return Promise.resolve();
+  return new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "symbols.js?v=0.7";
+    script.onload = script.onerror = () => resolve();
+    document.head.appendChild(script);
+  });
+}
+
+function ensureLearnDictionary() {
+  if (dictionaryUsesConcepts() && conceptCatalog) return Promise.resolve(conceptCatalog);
+  if (dictionaryUsesConcepts()) return ensureConceptCatalog();
+  return new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = "world-dictionary-data.js?v=0.11";
+    script.onload = () => ensureConceptCatalog().then(resolve, () => resolve(null));
+    script.onerror = () => resolve(null);
+    document.head.appendChild(script);
+  });
+}
+
+function requestLearnKanmoji(refresh) {
+  if (!learnShowKanmoji() || learnKanmojiReady() || learnKanmojiLoading) return;
+  learnKanmojiLoading = Promise.all([ensureLearnSymbols(), ensureLearnDictionary()]).then(() => {
+    learnKanmojiLoading = null;
+    if (learnShowKanmoji() && typeof refresh === "function") refresh();
+  });
+}
+
+function learnKanmojiIndex(lang) {
+  if (!conceptCatalog || !lang) return null;
+  if (!learnKanmojiMaps) learnKanmojiMaps = {};
+  if (learnKanmojiMaps[lang]) return learnKanmojiMaps[lang];
+  const map = new Map();
+  (conceptCatalog.lists[lang] || []).forEach((rec) => {
+    const norm = normalizeDictionaryWord(conceptShownWord(rec, lang));
+    if (!norm) return;
+    const list = map.get(norm);
+    if (list) list.push(rec);
+    else map.set(norm, [rec]);
+  });
+  learnKanmojiMaps[lang] = map;
+  return map;
+}
+
+function conceptRecsForWord(lang, word) {
+  const index = learnKanmojiIndex(lang);
+  if (!index) return [];
+  return index.get(normalizeDictionaryWord(word)) || [];
+}
+
+function readWordKanmoji(lang, word) {
+  const map = conceptUser().wordKanmoji || {};
+  const list = map[lang + "\0" + normalizeDictionaryWord(word)];
+  return Array.isArray(list) ? list.map((id) => parseInt(id, 10)).filter((id) => id && !isNaN(id)).slice(0, 4) : [];
+}
+
+function learnKanmojiSymbolIds(rec) {
+  return rec ? conceptKanmojiIds(rec) : [];
+}
+
+function learnKanmojiStatus(rec, wordIds) {
+  if (rec) {
+    const ids = learnKanmojiSymbolIds(rec);
+    if (!ids.length) return "unstamped";
+    if (rec.id > 0 && rec.id < 1000) return "stamped";
+    return "tempstamped";
+  }
+  return wordIds && wordIds.length ? "tempstamped" : "unknown";
+}
+
+function learnCompactStamp(ids, blank, asButton) {
+  const stamp = document.createElement(asButton ? "button" : "div");
+  if (asButton) stamp.type = "button";
+  stamp.className = "write-compact-stamp learn-kanmoji-box" + (blank ? " is-blank" : "");
+  if (blank) return stamp;
+  const refs = (ids || []).slice(0, 4).map((stored) => {
+    const n = parseInt(stored, 10);
+    if (!n || typeof symbols === "undefined") return null;
+    const sym = symbols.find((item) => String(item.id) === String(Math.abs(n)));
+    return sym ? { sym: sym, negated: n < 0 } : null;
+  }).filter(Boolean);
+  if (!refs.length) {
+    stamp.classList.add("is-blank");
+    return stamp;
+  }
+  if (refs.length === 1) stamp.classList.add("is-single");
+  else if (refs.length === 2) stamp.classList.add("is-pair");
+  else if (refs.length === 3) stamp.classList.add("is-triple");
+  refs.forEach((item) => {
+    const cell = document.createElement("div");
+    cell.className = "write-compact-stamp-symbol";
+    const name = item.negated ? symbolNegateLabel(getSymbolName(item.sym)) : getSymbolName(item.sym);
+    cell.title = name;
+    appendSymbolFace(cell, item.sym, name, item.negated ? { negated: true } : null);
+    stamp.appendChild(cell);
+  });
+  return stamp;
+}
+
+function saveLearnKanmoji(lang, word, rec, ids) {
+  const state = conceptUser();
+  const next = (ids || []).map((id) => parseInt(id, 10)).filter((id) => id && !isNaN(id)).slice(0, 4);
+  if (rec) {
+    const key = String(rec.id);
+    const fallback = rec.id > 0 && rec.id < 1000 ? [rec.id] : [];
+    const same = next.length === fallback.length && next.every((id, index) => id === fallback[index]);
+    if (same) delete state.kanmoji[key];
+    else state.kanmoji[key] = next;
+  } else {
+    if (!state.wordKanmoji) state.wordKanmoji = {};
+    const key = lang + "\0" + normalizeDictionaryWord(word);
+    if (next.length) state.wordKanmoji[key] = next;
+    else delete state.wordKanmoji[key];
+  }
+  writeConceptUserState(state);
+  learnKanmojiMaps = null;
+}
+
+function learnKanmojiFacts(rec, word, lang) {
+  const code = lang === "zh-CN" ? "zh" : (lang || "");
+  const facts = { pos: "", definition: "", word: word || "", langName: LANGUAGES[code] || "", langs: [] };
+  if (!rec) return facts;
+  facts.definition = conceptShownDefinition(rec, getStoredLang()) || conceptShownDefinition(rec, "en") || "";
+  facts.pos = conceptShownPos(rec) || "";
+  CONCEPT_LANGS.forEach((item) => {
+    const text = conceptShownWord(rec, item);
+    if (!text) return;
+    facts.langs.push({ code: item, name: LANGUAGES[item] || item, text });
+  });
+  return facts;
+}
+
+function openLearnSymbolPicker(currentIds, max, onSave, facts) {
+  ensureLearnSymbols().then(() => {
+    if (learnKanmojiBox && (!learnKanmojiBox.querySelector(".learn-kanmoji-info") || !learnKanmojiBox.querySelector(".learn-kanmoji-x"))) {
+      learnKanmojiBox.remove();
+      learnKanmojiBox = null;
+    }
+    if (!learnKanmojiBox) {
+      learnKanmojiBox = document.createElement("div");
+      learnKanmojiBox.className = "word-context-box learn-kanmoji-picker hidden";
+      learnKanmojiBox.innerHTML = '<div class="word-context-content concept-kanmoji-editor"><button type="button" class="learn-kanmoji-x" aria-label="Close">×</button><div class="word-context-actions learn-kanmoji-actions"><button type="button" class="learn-kanmoji-clear"></button><button type="button" class="learn-kanmoji-save"></button><button type="button" class="learn-kanmoji-cancel"></button></div><h2></h2><div class="learn-kanmoji-info"></div><div class="concept-kanmoji-current"></div><div class="learn-kanmoji-chooser"></div></div>';
+      document.body.appendChild(learnKanmojiBox);
+    }
+    const title = learnKanmojiBox.querySelector("h2");
+    const info = learnKanmojiBox.querySelector(".learn-kanmoji-info");
+    const current = learnKanmojiBox.querySelector(".concept-kanmoji-current");
+    const chooser = learnKanmojiBox.querySelector(".learn-kanmoji-chooser");
+    const clearBtn = learnKanmojiBox.querySelector(".learn-kanmoji-clear");
+    const saveBtn = learnKanmojiBox.querySelector(".learn-kanmoji-save");
+    const cancelBtn = learnKanmojiBox.querySelector(".learn-kanmoji-cancel");
+    const closeX = learnKanmojiBox.querySelector(".learn-kanmoji-x");
+    title.textContent = getTranslation("dictionary.editKanmoji");
+    clearBtn.textContent = getTranslation("dictionary.clearKanmoji");
+    saveBtn.textContent = getTranslation("dictionary.save");
+    cancelBtn.textContent = getTranslation("dictionary.cancel");
+    info.textContent = "";
+    const detail = facts && !Array.isArray(facts) ? facts : null;
+    if (detail) {
+      if (detail.pos || detail.definition || detail.word || detail.langName) {
+        const meta = document.createElement("div");
+        meta.className = "learn-kanmoji-meta";
+        if (detail.pos) {
+          const pos = document.createElement("span");
+          pos.className = "learn-kanmoji-pos";
+          pos.textContent = detail.pos;
+          meta.appendChild(pos);
+        }
+        if (detail.definition) {
+          const def = document.createElement("span");
+          def.className = "learn-kanmoji-def";
+          def.textContent = detail.definition;
+          meta.appendChild(def);
+        }
+        if (!detail.pos && !detail.definition && detail.word) meta.appendChild(document.createTextNode(detail.word));
+        if (!detail.pos && !detail.definition && detail.langName) {
+          const langLabel = document.createElement("span");
+          langLabel.textContent = detail.langName;
+          meta.appendChild(langLabel);
+        }
+        info.appendChild(meta);
+      }
+      if (detail.langs && detail.langs.length) {
+        const grid = document.createElement("div");
+        grid.className = "learn-kanmoji-langs";
+        detail.langs.forEach((item) => {
+          const row = document.createElement("div");
+          row.className = "learn-kanmoji-lang";
+          if (item.code) row.lang = item.code;
+          const name = document.createElement("span");
+          name.className = "learn-kanmoji-lang-name";
+          name.textContent = item.name;
+          const text = document.createElement("span");
+          text.textContent = item.text;
+          row.append(name, text);
+          grid.appendChild(row);
+        });
+        info.appendChild(grid);
+      }
+    } else {
+      (facts || []).forEach((line) => {
+        const row = document.createElement("div");
+        row.textContent = line;
+        info.appendChild(row);
+      });
+    }
+    let picked = (currentIds || []).slice(0, max);
+    let filterQuery = "";
+    let viewMode = getStoredSymbolViewMode();
+    let keyModeOpenCategory = 0;
+    chooser.textContent = "";
+    const controls = document.createElement("div");
+    controls.className = "symbol-search-controls";
+    const searchInput = document.createElement("input");
+    searchInput.type = "text";
+    searchInput.className = "learn-kanmoji-search";
+    const searchLabel = getTranslation("play.searchSymbols");
+    searchInput.placeholder = searchLabel === "play.searchSymbols" ? "Search symbols…" : searchLabel;
+    const modeToggle = document.createElement("button");
+    modeToggle.type = "button";
+    modeToggle.className = "play-symbol-mode-toggle";
+    applySymbolViewModeToToggle(modeToggle);
+    viewMode = modeToggle.dataset.mode === "key" ? "key" : "manual";
+    controls.append(searchInput, modeToggle);
+    const grid = document.createElement("div");
+    grid.className = "symbol-grid";
+    chooser.append(controls, grid);
+
+    const storedId = (sym, negated) => (negated ? -Math.abs(sym.id) : Math.abs(sym.id));
+    const paintCurrent = () => {
+      current.textContent = "";
+      picked.forEach((id) => {
+        const n = parseInt(id, 10);
+        const sym = typeof symbols === "undefined" ? null : symbols.find((item) => String(item.id) === String(Math.abs(n)));
+        if (!sym) return;
+        const negated = n < 0;
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "concept-kanmoji-chip";
+        const label = negated ? symbolNegateLabel(getSymbolName(sym)) : getSymbolName(sym);
+        chip.title = label;
+        appendSymbolFace(chip, sym, label, negated ? { negated: true } : null);
+        chip.addEventListener("click", (event) => {
+          event.stopPropagation();
+          picked = picked.filter((item) => parseInt(item, 10) !== n);
+          paintCurrent();
+          paintGrid();
+        });
+        current.appendChild(chip);
+      });
+    };
+    const togglePick = (sym, negated) => {
+      const stored = storedId(sym, negated);
+      const index = picked.findIndex((id) => parseInt(id, 10) === stored);
+      if (index >= 0) picked.splice(index, 1);
+      else if (picked.length < max) picked.push(stored);
+      paintCurrent();
+      paintGrid();
+    };
+    const appendSymbol = (sym, boxOptions) => {
+      const boxOpts = boxOptions || {};
+      const box = document.createElement("div");
+      box.className = "symbol-box";
+      if (boxOpts.isKeyCategory) box.classList.add("symbol-key-category");
+      if (boxOpts.isKeyOpen) box.classList.add("symbol-key-open");
+      const plainSelected = !boxOpts.isKeyCategory && picked.some((id) => parseInt(id, 10) === Math.abs(sym.id));
+      const zeroSelected = !boxOpts.isKeyCategory && picked.some((id) => parseInt(id, 10) === -Math.abs(sym.id));
+      if (plainSelected) box.classList.add("web-symbol-selected");
+      const name = getSymbolName(sym);
+      box.title = name;
+      appendSymbolFace(box, sym, name, boxOpts.isKeyCategory ? null : {
+        onNegate: () => togglePick(sym, true),
+      });
+      if (!boxOpts.isKeyCategory) setSymbolBoxUsage(box, plainSelected, zeroSelected);
+      const span = document.createElement("span");
+      span.textContent = name;
+      box.appendChild(span);
+      box.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (boxOpts.isKeyCategory) {
+          keyModeOpenCategory = boxOpts.categoryIndex;
+          paintGrid();
+          return;
+        }
+        togglePick(sym, false);
+      });
+      grid.appendChild(box);
+    };
+    const appendBlank = () => {
+      const blank = document.createElement("div");
+      blank.className = "symbol-box symbol-box-empty";
+      blank.setAttribute("aria-hidden", "true");
+      grid.appendChild(blank);
+    };
+    const paintGrid = () => {
+      grid.textContent = "";
+      grid.classList.toggle("symbol-grid-key", viewMode === "key" && !filterQuery);
+      if (typeof symbols === "undefined") return;
+      if (filterQuery) {
+        symbols.forEach((sym) => {
+          const name = getSymbolName(sym).toLowerCase();
+          const desc = (getSymbolDescription(sym) || "").toLowerCase();
+          if (!name.includes(filterQuery) && !desc.includes(filterQuery)) return;
+          appendSymbol(sym);
+        });
+        return;
+      }
+      if (viewMode === "key") {
+        const board = buildKeyModeBoard(keyModeOpenCategory);
+        keyModeOpenCategory = board.openIndex;
+        board.topIds.forEach((cellId, cellIndex) => {
+          if (!cellId) { appendBlank(); return; }
+          const sym = symbols.find((item) => item.id === cellId);
+          if (!sym) { appendBlank(); return; }
+          appendSymbol(sym, { isKeyOpen: cellIndex === 0 });
+        });
+        board.bottomHeads.forEach((head) => {
+          const sym = symbols.find((item) => item.id === head.id);
+          if (!sym) { appendBlank(); return; }
+          appendSymbol(sym, { isKeyCategory: true, categoryIndex: head.categoryIndex });
+        });
+        return;
+      }
+      if (typeof symbolGridLayout !== "undefined" && Array.isArray(symbolGridLayout)) {
+        symbolGridLayout.flat().forEach((cellId) => {
+          if (!cellId) { appendBlank(); return; }
+          const sym = symbols.find((item) => item.id === cellId);
+          if (!sym) { appendBlank(); return; }
+          appendSymbol(sym);
+        });
+        return;
+      }
+      symbols.forEach((sym) => appendSymbol(sym));
+    };
+    modeToggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      viewMode = viewMode === "key" ? "manual" : "key";
+      setStoredSymbolViewMode(viewMode);
+      applySymbolViewModeToToggle(modeToggle);
+      searchInput.value = "";
+      filterQuery = "";
+      paintGrid();
+    });
+    searchInput.addEventListener("input", () => {
+      filterQuery = searchInput.value.trim().toLowerCase();
+      paintGrid();
+    });
+    searchInput.addEventListener("click", (event) => event.stopPropagation());
+    const close = () => learnKanmojiBox.classList.add("hidden");
+    clearBtn.onclick = (event) => {
+      event.stopPropagation();
+      picked = [];
+      paintCurrent();
+      paintGrid();
+    };
+    cancelBtn.onclick = (event) => {
+      event.stopPropagation();
+      close();
+    };
+    if (closeX) {
+      closeX.onclick = (event) => {
+        event.stopPropagation();
+        close();
+      };
+    }
+    saveBtn.onclick = (event) => {
+      event.stopPropagation();
+      close();
+      onSave(picked.slice());
+    };
+    paintCurrent();
+    paintGrid();
+    learnKanmojiBox.classList.remove("hidden");
+  });
+}
+
+function learnKanmojiParts(text, lang) {
+  const chars = Array.from(String(text || ""));
+  const spaced = lang !== "zh" && lang !== "ja" && lang !== "ko";
+  const index = learnKanmojiIndex(lang);
+  const parts = [];
+  const isBreak = (ch) => /[\s\p{P}\p{S}]/u.test(ch);
+  let i = 0;
+  while (i < chars.length) {
+    if (isBreak(chars[i])) {
+      let j = i + 1;
+      while (j < chars.length && isBreak(chars[j])) j += 1;
+      parts.push({ raw: chars.slice(i, j).join(""), punct: true });
+      i = j;
+      continue;
+    }
+    if (spaced) {
+      let j = i + 1;
+      while (j < chars.length && !isBreak(chars[j])) j += 1;
+      parts.push({ raw: chars.slice(i, j).join("") });
+      i = j;
+      continue;
+    }
+    let best = 0;
+    if (index) {
+      const max = Math.min(24, chars.length - i);
+      for (let len = max; len >= 1; len -= 1) {
+        const slice = chars.slice(i, i + len).join("");
+        if (isBreak(slice)) continue;
+        if (index.has(normalizeDictionaryWord(slice))) {
+          best = len;
+          break;
+        }
+      }
+    }
+    if (!index) {
+      parts.push({ raw: chars.slice(i).join("") });
+      break;
+    }
+    if (best) {
+      parts.push({ raw: chars.slice(i, i + best).join("") });
+      i += best;
+      continue;
+    }
+    let j = i + 1;
+    while (j < chars.length && !isBreak(chars[j])) {
+      let hit = false;
+      const max = Math.min(24, chars.length - j);
+      for (let len = 1; len <= max; len += 1) {
+        if (index.has(normalizeDictionaryWord(chars.slice(j, j + len).join("")))) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) break;
+      j += 1;
+    }
+    parts.push({ raw: chars.slice(i, j).join("") });
+    i = j;
+  }
+  return parts;
+}
+
+function buildLearnKanmojiRow(text, lang, refresh) {
+  const row = document.createElement("span");
+  row.className = "learn-kanmoji-row";
+  const code = lang === "zh-CN" ? "zh" : (lang || "");
+  learnKanmojiParts(text, code).forEach((part) => {
+    if (part.punct) {
+      row.appendChild(document.createTextNode(part.raw));
+      return;
+    }
+    const recs = conceptRecsForWord(code, part.raw);
+    const senseKey = code + "\0" + normalizeDictionaryWord(part.raw);
+    const chosen = learnKanmojiSense.get(senseKey);
+    const selected = recs.find((rec) => rec.id === chosen) || recs[0] || null;
+    const wordIds = selected ? [] : readWordKanmoji(code, part.raw);
+    const status = learnKanmojiStatus(selected, wordIds);
+    const ids = selected ? learnKanmojiSymbolIds(selected) : wordIds;
+    const token = document.createElement("span");
+    token.className = "write-token write-output-token learn-kanmoji-token write-token-" + status;
+    if (recs.length > 1) token.classList.add("write-token-context");
+    if (status === "stamped") token.classList.add("is-bold");
+    const hasStamp = status === "stamped" || status === "tempstamped";
+    const stamp = learnCompactStamp(hasStamp ? ids : [], !hasStamp, true);
+    const edit = () => openLearnSymbolPicker(ids, 4, (next) => {
+      saveLearnKanmoji(code, part.raw, selected, next);
+      if (typeof refresh === "function") refresh();
+    }, learnKanmojiFacts(selected, part.raw, code));
+    stamp.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      edit();
+    });
+    token.appendChild(stamp);
+    const caption = document.createElement("span");
+    caption.className = "write-token-caption";
+    caption.textContent = part.raw;
+    let clickTimer = null;
+    caption.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (event.detail > 1 || recs.length < 2) return;
+      clearTimeout(clickTimer);
+      clickTimer = setTimeout(() => {
+        const at = recs.findIndex((rec) => rec === selected);
+        const next = recs[(at + 1) % recs.length];
+        learnKanmojiSense.set(senseKey, next.id);
+        if (typeof refresh === "function") refresh();
+      }, 250);
+    });
+    caption.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      clearTimeout(clickTimer);
+      edit();
+    });
+    token.appendChild(caption);
+    row.appendChild(token);
+  });
+  return row;
+}
+
+function paintLearnKanmoji(host, text, lang, refresh) {
+  if (!host || !learnShowKanmoji()) return;
+  requestLearnKanmoji(refresh);
+  if (!learnKanmojiReady()) return;
+  const origin = host.querySelector ? host.querySelector(".learn-origin") : null;
+  let row = null;
+  try {
+    row = buildLearnKanmojiRow(text, lang, refresh);
+  } catch (err) {
+    return;
+  }
+  if (!row || !row.childNodes.length) return;
+  host.textContent = "";
+  host.appendChild(row);
+  if (origin) host.appendChild(origin);
+}
+
+function paintKanjiStamp(host, itemKey, glyph, refresh, showGlyph) {
+  if (!host || !learnShowKanmoji() || !glyph) return;
+  requestLearnKanmoji(refresh);
+  const index = window.KANJI_DATA ? getKanversionIndex() : null;
+  const unitKey = (index && index.unitKeyOf(glyph)) || "";
+  const visual = unitKey ? createKanversionVisual(unitKey, readKanversionState()) : null;
+  if (visual) {
+    host.textContent = "";
+    host.classList.add("learn-kanmoji-stack");
+    const stamp = document.createElement("button");
+    stamp.type = "button";
+    stamp.className = "write-compact-stamp learn-kanmoji-box is-single";
+    stamp.appendChild(visual);
+    stamp.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const ids = unitKey ? kanversionKanmojiIds(unitKey, readKanversionState()) : [];
+      openLearnSymbolPicker(ids, unitKey && !unitKey.startsWith("C:") ? 2 : 4, (next) => {
+        if (unitKey && !unitKey.startsWith("C:")) writeKanversionKanmoji(unitKey, next);
+        else saveLearnKanmoji(String(itemKey || "").startsWith("C:") ? "zh" : "ja", glyph, null, next);
+        if (typeof refresh === "function") refresh();
+      }, learnKanmojiFacts(null, glyph, String(itemKey || "").startsWith("C:") ? "zh" : "ja"));
+    });
+    if (showGlyph !== false) {
+      const caption = document.createElement("span");
+      caption.className = "write-token-caption";
+      caption.textContent = glyph;
+      host.append(stamp, caption);
+    } else host.append(stamp);
+    return;
+  }
+  if (!learnKanmojiReady()) return;
+  const lang = String(itemKey || "").startsWith("C:") ? "zh" : "ja";
+  host.textContent = "";
+  host.classList.add("learn-kanmoji-stack");
+  const recs = conceptRecsForWord(lang, glyph);
+  const selected = recs[0] || null;
+  const ids = selected ? learnKanmojiSymbolIds(selected) : readWordKanmoji(lang, glyph);
+  const status = learnKanmojiStatus(selected, ids);
+  const hasStamp = status === "stamped" || status === "tempstamped";
+  const token = document.createElement("span");
+  token.className = "write-token learn-kanmoji-token write-token-" + status + (status === "stamped" ? " is-bold" : "");
+  const editKanji = () => openLearnSymbolPicker(ids, unitKey && !unitKey.startsWith("C:") ? 2 : 4, (next) => {
+    if (unitKey && !unitKey.startsWith("C:")) writeKanversionKanmoji(unitKey, next);
+    else saveLearnKanmoji(lang, glyph, selected, next);
+    if (typeof refresh === "function") refresh();
+  }, learnKanmojiFacts(selected, glyph, lang));
+  const stamp = learnCompactStamp(hasStamp ? ids : [], !hasStamp, true);
+  stamp.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    editKanji();
+  });
+  token.appendChild(stamp);
+  if (showGlyph !== false) {
+    const caption = document.createElement("span");
+    caption.className = "write-token-caption";
+    caption.textContent = glyph;
+    caption.addEventListener("dblclick", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      editKanji();
+    });
+    token.appendChild(caption);
+  }
+  host.appendChild(token);
+}
+
+/* --------------------------------
+   CUSTOM LESSON LISTS
+   One shared set of lists. A list can mix Kanji, words, and sentences, and the same list
+   is shown and practiced from every Custom list. Right-click a star to add the current
+   item. The To-Do control cycles To-Do, Custom, Completed. Every trash button asks first.
+-------------------------------- */
+const CUSTOM_LIST_KEY = "kbCustomLists";
+let customListListener = null;
+let customKanjiIndex = null;
+
+function customNewId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function customSnapshot(item) {
+  if (!item || !item.ref) return null;
+  return {
+    ref: String(item.ref),
+    kind: item.kind || "",
+    lang: item.lang || "",
+    key: item.key || "",
+    text: item.text || "",
+    label: item.label || "",
+    reading: item.reading || "",
+    answers: Array.isArray(item.answers) ? item.answers.filter(Boolean) : [],
+    readings: Array.isArray(item.readings) ? item.readings.filter(Boolean) : [],
+    promptLang: item.promptLang || ""
+  };
+}
+
+function customReadingParts(reading, extra) {
+  const parts = [];
+  const add = (value) => {
+    const text = String(value || "").trim();
+    if (!text || parts.includes(text)) return;
+    parts.push(text);
+    if (text.includes(".")) {
+      const head = text.split(".")[0].trim();
+      if (head && !parts.includes(head)) parts.push(head);
+    }
+  };
+  String(reading || "").split(/[、,;／/]/).forEach(add);
+  (extra || []).forEach(add);
+  return parts;
+}
+
+function customLearnItem(kind, lang, key, text, label, reading) {
+  const safeLang = String(lang || "").split(",")[0];
+  const safeKey = String(key || "");
+  return customSnapshot({
+    ref: kind + "\t" + safeLang + "\t" + safeKey,
+    kind,
+    lang: safeLang,
+    key: safeKey,
+    text: text || "",
+    label: label || "",
+    reading: reading || "",
+    answers: text ? [text] : [],
+    readings: customReadingParts(reading),
+    promptLang: getStoredLang()
+  });
+}
+
+function customKanjiItem(item) {
+  if (!item || !item.key) return null;
+  const reading = item.readingText || item.reading || [item.on, item.kun].filter(Boolean).join(" ／ ");
+  const answers = item.chars && item.chars.length ? item.chars.slice() : [item.char || item.text].filter(Boolean);
+  return customSnapshot({
+    ref: "kanji\t\t" + item.key,
+    kind: "kanji",
+    lang: "",
+    key: item.key,
+    text: item.char || item.text || "",
+    label: item.label || "",
+    reading,
+    answers,
+    readings: customReadingParts(reading, item.readings)
+  });
+}
+
+function customItemFromLegacy(scope, entry) {
+  if (entry && typeof entry === "object") return entry.ref ? customSnapshot(entry) : null;
+  const key = String(entry || "");
+  if (!key) return null;
+  if (scope === "kanji" || /^[RCJ]:/.test(key)) {
+    return customSnapshot({ ref: "kanji\t\t" + key, kind: "kanji", lang: "", key, text: "", label: "", reading: "" });
+  }
+  const match = /^learn:([^:]+):([^:]+)$/.exec(scope || "");
+  const kind = match ? match[1].split(",")[0] : "vocabulary";
+  const lang = match ? match[2].split(",")[0] : (key.includes("|") ? key.slice(0, key.indexOf("|")) : "");
+  const text = key.includes("|") ? key.slice(key.indexOf("|") + 1).replace(/\u001e\d+$/, "") : key;
+  return customSnapshot({
+    ref: kind + "\t" + lang + "\t" + key,
+    kind,
+    lang,
+    key,
+    text,
+    label: "",
+    reading: "",
+    answers: text ? [text] : []
+  });
+}
+
+function normalizeCustomList(row, scope) {
+  if (!row || typeof row !== "object") return null;
+  const items = [];
+  const source = Array.isArray(row.items) ? row.items : (Array.isArray(row.keys) ? row.keys : []);
+  source.forEach((entry) => {
+    const item = customItemFromLegacy(scope || "", entry);
+    if (item && item.ref && !items.some((other) => other.ref === item.ref)) items.push(item);
+  });
+  return { id: String(row.id || customNewId()), name: String(row.name || ""), items };
+}
+
+function migrateCustomStore(raw) {
+  const lists = [];
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return lists;
+  Object.keys(raw).forEach((scope) => {
+    const rows = raw[scope];
+    if (!Array.isArray(rows)) return;
+    rows.forEach((row) => {
+      const list = normalizeCustomList(row, scope);
+      if (list) lists.push(list);
+    });
+  });
+  return lists;
+}
+
+function readCustomListStore() {
+  try {
+    const value = JSON.parse(localStorage.getItem(CUSTOM_LIST_KEY) || "[]");
+    return value && typeof value === "object" ? value : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function customLists() {
+  const raw = readCustomListStore();
+  if (Array.isArray(raw)) return raw.map((row) => normalizeCustomList(row, "")).filter(Boolean);
+  const lists = migrateCustomStore(raw);
+  localStorage.setItem(CUSTOM_LIST_KEY, JSON.stringify(lists));
+  return lists;
+}
+
+function saveCustomLists(lists) {
+  localStorage.setItem(CUSTOM_LIST_KEY, JSON.stringify(lists));
+  if (customListListener) customListListener();
+}
+
+function confirmCustomDelete(list) {
+  return window.confirm(formatTranslation("kanji.customDeleteConfirm", { name: customListName(list) }));
+}
+
+function customListName(list) {
+  const name = list && String(list.name || "").trim();
+  return name || getTranslation("kanji.customLessonName");
+}
+
+function placeCustomMenu(menu, anchor) {
+  const margin = 8;
+  menu.style.visibility = "hidden";
+  menu.style.top = "0px";
+  menu.style.left = "0px";
+  const rect = anchor.getBoundingClientRect();
+  const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
+  const viewWidth = document.documentElement.clientWidth;
+  const viewHeight = window.innerHeight;
+  let left = rect.left;
+  let top = rect.bottom + 6;
+  if (left + width > viewWidth - margin) left = viewWidth - margin - width;
+  if (left < margin) left = margin;
+  if (top + height > viewHeight - margin) top = rect.top - 6 - height;
+  if (top < margin) top = margin;
+  if (top + height > viewHeight - margin) top = margin;
+  menu.style.top = top + "px";
+  menu.style.left = left + "px";
+  menu.style.visibility = "";
+}
+
+function closeCustomMenus() {
+  document.querySelectorAll(".custom-star-menu, .custom-status-menu").forEach((node) => node.remove());
+}
+
+function openStatusMenu(anchor, current, onPick) {
+  closeCustomMenus();
+  const menu = document.createElement("div");
+  menu.className = "custom-status-menu";
+  ["todo", "custom", "completed"].forEach((id) => {
+    const key = id === "completed" ? "kanji.learnCompleted" : id === "custom" ? "kanji.learnCustom" : "kanji.learnTodo";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = getTranslation(key);
+    if (id === current) button.classList.add("is-active");
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeCustomMenus();
+      onPick(id);
+    });
+    menu.appendChild(button);
+  });
+  document.body.appendChild(menu);
+  placeCustomMenu(menu, anchor);
+}
+
+function openCustomStarMenu(anchor, item) {
+  if (!item || !item.ref) return;
+  closeCustomMenus();
+  const menu = document.createElement("div");
+  menu.className = "custom-star-menu";
+  const create = document.createElement("button");
+  create.type = "button";
+  create.className = "custom-star-create";
+  create.textContent = getTranslation("kanji.createCustomLesson");
+  const lists = document.createElement("div");
+  lists.className = "custom-star-lists";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "custom-star-close";
+  close.textContent = getTranslation("kanji.close");
+  close.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    menu.remove();
+  });
+  create.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const next = customLists().concat([{ id: customNewId(), name: "", items: [] }]);
+    saveCustomLists(next);
+    renderRows();
+    placeCustomMenu(menu, anchor);
+  });
+
+  function renderRows() {
+    lists.textContent = "";
+    customLists().forEach((list) => {
+      const row = document.createElement("div");
+      row.className = "custom-star-row";
+      const mark = document.createElement("button");
+      mark.type = "button";
+      mark.className = "custom-star-mark";
+      const on = (list.items || []).some((entry) => entry.ref === item.ref);
+      mark.textContent = on ? "✓" : "✗";
+      mark.classList.toggle("is-on", on);
+      mark.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const rows = customLists().map((entry) => {
+          if (entry.id !== list.id) return entry;
+          const items = (entry.items || []).filter((stored) => stored.ref !== item.ref);
+          if (!on) items.push(customSnapshot(item));
+          return { id: entry.id, name: entry.name, items };
+        });
+        saveCustomLists(rows);
+        renderRows();
+      });
+      const name = document.createElement("button");
+      name.type = "button";
+      name.className = "custom-star-name";
+      name.textContent = customListName(list);
+      name.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = list.name || "";
+        input.placeholder = getTranslation("kanji.customLessonName");
+        name.textContent = "";
+        name.appendChild(input);
+        input.focus();
+        input.select();
+        let done = false;
+        const commit = (save) => {
+          if (done || !input.isConnected) return;
+          done = true;
+          if (save) {
+            const rows = customLists().map((entry) => (
+              entry.id === list.id ? { id: entry.id, name: input.value.trim(), items: entry.items || [] } : entry
+            ));
+            saveCustomLists(rows);
+          }
+          renderRows();
+        };
+        input.addEventListener("keydown", (keyEvent) => {
+          if (keyEvent.key === "Enter") {
+            keyEvent.preventDefault();
+            commit(true);
+          } else if (keyEvent.key === "Escape") {
+            keyEvent.preventDefault();
+            commit(false);
+          }
+        });
+        input.addEventListener("blur", () => commit(true));
+      });
+      const trash = document.createElement("button");
+      trash.type = "button";
+      trash.className = "custom-star-trash";
+      trash.textContent = "🗑";
+      trash.setAttribute("aria-label", getTranslation("kanji.customDelete"));
+      trash.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!confirmCustomDelete(list)) return;
+        saveCustomLists(customLists().filter((entry) => entry.id !== list.id));
+        renderRows();
+        placeCustomMenu(menu, anchor);
+      });
+      row.append(mark, name, trash);
+      lists.appendChild(row);
+    });
+  }
+
+  menu.append(create, lists, close);
+  document.body.appendChild(menu);
+  renderRows();
+  placeCustomMenu(menu, anchor);
+}
+
+function bindStarCustomMenu(star, itemOrGetter) {
+  if (!star) return;
+  star.addEventListener("contextmenu", (event) => {
+    const item = typeof itemOrGetter === "function" ? itemOrGetter() : itemOrGetter;
+    if (!item || !item.ref) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openCustomStarMenu(star, item);
+  });
+}
+
+function customKanjiRows() {
+  if (customKanjiIndex || !window.KANJI_DATA) return customKanjiIndex;
+  const split = (list) => (Array.isArray(list) ? list : []).map((line) => String(line).split("\t"));
+  const data = window.KANJI_DATA;
+  customKanjiIndex = {
+    R: new Map(split(data.radicals).map((row) => [row[0], row])),
+    C: new Map(split(data.hanzi).map((row) => [row[1], row])),
+    J: new Map(split(data.kanji).map((row) => [row[0], row]))
+  };
+  return customKanjiIndex;
+}
+
+function enrichCustomKanji(item) {
+  if (!item || item.kind !== "kanji" || item.text) return item;
+  const rows = customKanjiRows();
+  const key = item.key || "";
+  const row = rows && rows[key[0]] && rows[key[0]].get(key.slice(2));
+  if (!row) return item;
+  const copy = Object.assign({}, item);
+  if (key[0] === "R") {
+    copy.text = row[1] || "";
+    copy.label = copy.label || String(row[4] || "").split(/\s*[;,•|]\s*/)[0].trim();
+    copy.reading = copy.reading || row[5] || "";
+  } else if (key[0] === "C") {
+    copy.text = row[1] || key.slice(2);
+    const gloss = String(row[5] || "").match(/-\s*([^•|]+)/);
+    copy.label = copy.label || (gloss ? gloss[1].replace(/\s*\([^)]*\)/g, "").trim() : "");
+  } else if (key[0] === "J") {
+    copy.text = row[0] || key.slice(2);
+    copy.label = copy.label || String(row[5] || "").split(/\s*[;,•|]\s*/)[0].trim();
+    copy.reading = copy.reading || [row[7], row[6]].filter(Boolean).join(" ／ ");
+  }
+  copy.answers = copy.text ? [copy.text] : [];
+  copy.readings = customReadingParts(copy.reading);
+  return copy;
+}
+
+function customNeedsKanjiData(list) {
+  return (list.items || []).some((item) => item.kind === "kanji" && !item.text);
+}
+
+function customDistinctLabel(item) {
+  const label = String(item && item.label || "").trim();
+  const text = String(item && item.text || "").trim();
+  if (!label || !text || customPlain(label) === customPlain(text)) return "";
+  return label;
+}
+
+function customFirstLink(ids, letter) {
+  const parts = String(ids || "").split("\t");
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].charAt(0) !== letter) continue;
+    const n = parseInt(parts[i].slice(1), 10);
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
+function customFillLabels(items) {
+  const groups = new Map();
+  (items || []).forEach((item) => {
+    if (!item || item.kind === "kanji" || customDistinctLabel(item) || !item.text || !item.lang) return;
+    const kind = item.kind === "sentence" ? "sentence" : item.kind === "alphabet" ? "alphabet" : "vocabulary";
+    const glossLang = getStoredLang() && getStoredLang() !== item.lang ? getStoredLang() : (item.lang === "en" ? "" : "en");
+    if (!glossLang) return;
+    const key = kind + "\0" + item.lang + "\0" + glossLang;
+    if (!groups.has(key)) groups.set(key, { kind: kind, lang: item.lang, glossLang: glossLang, items: [] });
+    groups.get(key).items.push(item);
+  });
+  const jobs = [];
+  groups.forEach((group) => {
+    const letter = LEARN_CODE_LETTER[group.glossLang];
+    if (!letter) return;
+    jobs.push(Promise.all([
+      loadLearnBank(group.kind, group.lang),
+      loadLearnBank(group.kind, group.glossLang),
+    ]).then(([source, other]) => {
+      const byText = new Map();
+      source.texts.forEach((text, index) => {
+        const plain = customPlain(text);
+        if (plain && !byText.has(plain)) byText.set(plain, index);
+      });
+      group.items.forEach((item) => {
+        if (customDistinctLabel(item)) return;
+        const index = byText.get(customPlain(item.text));
+        if (index == null) return;
+        const n = customFirstLink(source.ids[index], letter);
+        const gloss = n ? String(other.texts[n - 1] || "").trim() : "";
+        if (!gloss || customPlain(gloss) === customPlain(item.text)) return;
+        item.label = gloss;
+        item.promptLang = group.glossLang;
+      });
+    }).catch(() => {}));
+  });
+  return Promise.all(jobs).then(() => items);
+}
+
+function customTranslationSeeds(item) {
+  const seeds = [];
+  const add = (lang, text) => {
+    const code = lang === "zh-CN" ? "zh" : String(lang || "");
+    const value = String(text || "").trim();
+    if (!value) return;
+    if (seeds.some((seed) => customPlain(seed.text) === customPlain(value))) return;
+    seeds.push({ text: value, lang: code });
+  };
+  add(item.lang, item.text);
+  add(item.promptLang || getStoredLang(), item.label);
+  return seeds;
+}
+
+// The word and every language it links to. A later card can ask "Coffee" and accept Kaffee, コーヒー, and the rest.
+function customAttachTranslations(item) {
+  const seeds = customTranslationSeeds(item);
+  const kind = item.kind === "sentence" ? "sentence" : item.kind === "vocabulary" ? "vocabulary" : "";
+  const apply = (words, distractors) => {
+    const unique = [];
+    (words || []).forEach((word) => {
+      const text = String(word && word.text || "").trim();
+      if (!text || unique.some((have) => customPlain(have.text) === customPlain(text))) return;
+      unique.push({ text, lang: word.lang || "" });
+    });
+    item.equivalents = unique.length ? unique : seeds;
+    item.distractors = distractors || [];
+  };
+  if (!kind || !seeds.some((seed) => LEARN_CODE_LETTER[seed.lang])) {
+    apply(seeds, []);
+    return Promise.resolve();
+  }
+  const run = async () => {
+    for (let s = 0; s < seeds.length; s++) {
+      const seed = seeds[s];
+      if (!LEARN_CODE_LETTER[seed.lang]) continue;
+      let bank = null;
+      try { bank = await loadLearnBank(kind, seed.lang); } catch (e) { continue; }
+      const plain = customPlain(seed.text);
+      let index = -1;
+      for (let i = 0; i < bank.texts.length; i++) {
+        if (customPlain(bank.texts[i]) === plain) { index = i; break; }
+      }
+      if (index < 0) continue;
+      const words = [{ text: String(bank.texts[index] || "").trim(), lang: seed.lang }];
+      const loaded = [{ lang: seed.lang, texts: bank.texts }];
+      await Promise.all(Object.keys(LEARN_CODE_LETTER).map((code) => {
+        if (code === seed.lang) return null;
+        const n = customFirstLink(bank.ids[index], LEARN_CODE_LETTER[code]);
+        if (!n) return null;
+        return loadLearnBank(kind, code).then((other) => {
+          const text = String(other.texts[n - 1] || "").trim();
+          if (text) words.push({ text, lang: code });
+          loaded.push({ lang: code, texts: other.texts });
+        }).catch(() => {});
+      }));
+      seeds.forEach((extra) => words.push(extra));
+      const banned = new Set(words.map((word) => customPlain(word.text)));
+      const distractors = [];
+      loaded.forEach((entry) => {
+        const texts = entry.texts || [];
+        for (let n = 0; n < 12 && distractors.length < 48; n++) {
+          const text = String(texts[Math.floor(Math.random() * texts.length)] || "").trim();
+          const key = customPlain(text);
+          if (!key || banned.has(key) || distractors.some((option) => customPlain(option.text) === key)) continue;
+          distractors.push({ text, lang: entry.lang });
+        }
+      });
+      apply(words, distractors);
+      return;
+    }
+    apply(seeds, []);
+  };
+  return run().catch(() => apply(seeds, []));
+}
+
+function customPrepareList(list, done) {
+  const finish = () => {
+    const items = (list.items || []).map((item) => Object.assign({}, enrichCustomKanji(item)));
+    customFillLabels(items).then((filled) => {
+      const changed = filled.some((item, index) => {
+        const prev = (list.items || [])[index] || {};
+        return item.label !== (prev.label || "") || (item.promptLang || "") !== (prev.promptLang || "");
+      });
+      if (changed && list.id) {
+        saveCustomLists(customLists().map((entry) => (
+          entry.id === list.id ? { id: entry.id, name: entry.name, items: filled } : entry
+        )));
+      }
+      Promise.all(filled.map((item) => customAttachTranslations(item))).then(() => {
+        done(Object.assign({}, list, { items: filled }));
+      });
+    });
+  };
+  if (!customNeedsKanjiData(list) || window.KANJI_DATA) {
+    finish();
+    return;
+  }
+  const script = document.createElement("script");
+  script.src = "kanji-data.js?v=0.7";
+  script.onload = script.onerror = finish;
+  document.head.appendChild(script);
+}
+
+function customModesFor(item, enabled) {
+  const on = new Set(enabled || []);
+  const modes = [];
+  const translated = customDistinctLabel(item);
+  if (on.has("definition") && item.text && translated) modes.push("definition");
+  if (item.kind === "kanji" && (on.has("kanji") || on.has("word")) && item.text && (item.reading || item.label)) modes.push("kanji");
+  if (item.kind !== "kanji" && (on.has("word") || on.has("kanji")) && item.text && translated) modes.push("word");
+  if (on.has("reading") && item.reading) modes.push("reading");
+  if (!modes.length && item.kind === "kanji" && item.text) modes.push("kanji");
+  return modes;
+}
+
+function customPlayFromList(list, modes) {
+  const items = (list.items || []).map(enrichCustomKanji).filter((item) => item.text || item.label);
+  const cards = [];
+  items.forEach((item) => {
+    customModesFor(item, modes).forEach((mode) => cards.push({ id: item.ref + "|" + mode, mode, item }));
+  });
+  const stubs = items.map((item) => ({ key: item.ref }));
+  const play = {
+    universal: true,
+    customId: list.id,
+    customName: customListName(list),
+    lesson: 0,
+    words: stubs,
+    symbols: stubs,
+    items,
+    cards,
+    correct: new Set(),
+    missed: new Set(),
+    round: null,
+    lastId: ""
+  };
+  if (!items.length) play.message = "kanji.customListNoWords";
+  else if (!(modes || []).length) play.message = "kanji.playNoModes";
+  else if (!cards.length) play.message = "kanji.playNoCards";
+  return play;
+}
+
+function customDeal(play) {
+  const pool = play.cards.filter((card) => !play.correct.has(card.id));
+  if (!pool.length) {
+    play.round = null;
+    play.finished = true;
+    return;
+  }
+  const choices = pool.length > 1 ? pool.filter((card) => card.id !== play.lastId) : pool;
+  const card = choices[Math.floor(Math.random() * choices.length)];
+  play.lastId = card.id;
+  const round = { card, answered: false, ok: false, choice: "" };
+  if (card.mode === "definition") {
+    const item = card.item;
+    const same = (a, b) => customPlain(a) === customPlain(b);
+    const equivalents = (item.equivalents && item.equivalents.length ? item.equivalents : customTranslationSeeds(item))
+      .filter((word) => word && word.text);
+    const question = equivalents[Math.floor(Math.random() * equivalents.length)] || { text: item.text, lang: item.lang || "" };
+    const answers = equivalents.filter((word) => !same(word.text, question.text));
+    const correctPlain = new Set(equivalents.map((word) => customPlain(word.text)));
+    const options = [];
+    const pushOption = (text, lang) => {
+      const value = String(text || "").trim();
+      const key = customPlain(value);
+      if (!key || correctPlain.has(key) || same(value, question.text)) return;
+      if (options.some((option) => same(option.text, value))) return;
+      options.push({ text: value, lang: lang || "" });
+    };
+    play.items.forEach((other) => {
+      if (!other || other.ref === item.ref) return;
+      const forms = other.equivalents && other.equivalents.length ? other.equivalents : customTranslationSeeds(other);
+      forms.forEach((form) => pushOption(form.text, form.lang));
+    });
+    (item.distractors || []).forEach((form) => pushOption(form.text, form.lang));
+    const start = (customPlain(question.text).match(/\p{L}/u) || [""])[0];
+    const alike = options.filter((option) => (customPlain(option.text).match(/\p{L}/u) || [""])[0] === start);
+    const distractors = alike.length ? alike : options;
+    const showWrong = distractors.length && answers.length && Math.random() < 0.5;
+    const shown = showWrong
+      ? distractors[Math.floor(Math.random() * distractors.length)]
+      : (answers[Math.floor(Math.random() * answers.length)] || question);
+    round.question = question.text;
+    round.questionLang = question.lang || "";
+    round.answers = answers;
+    round.answer = answers.map((word) => word.text).join(" / ");
+    round.answerLang = shown.lang || (answers[0] && answers[0].lang) || "";
+    round.shownLabel = shown.text;
+    round.shownLang = shown.lang || "";
+    round.correctShown = answers.some((word) => same(word.text, shown.text));
+    round.phase = 1;
+  }
+  play.round = round;
+}
+
+function customSettle(play, ok, streakNow) {
+  const round = play.round;
+  if (!round || round.answered) return streakNow;
+  round.answered = true;
+  round.ok = ok;
+  if (ok) {
+    play.correct.add(round.card.id);
+    return streakNow + 1;
+  }
+  play.missed.add(round.card.item.ref);
+  return 0;
+}
+
+function customPlain(text) {
+  return String(text || "").normalize("NFKC").toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function customAnswerOk(card, typed) {
+  const given = customPlain(typed);
+  if (!given) return false;
+  const item = card.item;
+  let pool;
+  if (card.mode === "reading") pool = customReadingParts(item.reading, item.readings);
+  else if (card.mode === "word" && item.kind === "sentence") pool = [item.label];
+  else pool = item.answers && item.answers.length ? item.answers : [item.text];
+  return pool.some((part) => customPlain(part) === given);
+}
+
+function customExpected(card) {
+  const item = card.item;
+  if (card.mode === "reading") return item.reading || (item.readings && item.readings[0]) || "";
+  if (card.mode === "word" && item.kind === "sentence") return item.label || "";
+  return item.text || "";
+}
+
+function customTypeKey(card) {
+  const item = card.item;
+  if (card.mode === "kanji") return "kanji.playTypeCharacter";
+  if (card.mode === "reading") {
+    if (item.lang === "zh" || String(item.key || "").startsWith("C:")) return "kanji.playTypePinyin";
+    if (item.lang === "ja" || item.lang === "ko" || /^[RJ]:/.test(item.key || "")) return "kanji.playTypeKana";
+    return "learn.playTypeRomanized";
+  }
+  if (item.kind === "sentence") return "learn.playTypeTranslation";
+  if (item.kind === "alphabet") return "learn.playTypeLetter";
+  return "learn.playTypeWord";
+}
+
+function customModeKey(card) {
+  const item = card.item;
+  if (card.mode === "kanji") return "kanji.modeKanji";
+  if (card.mode === "reading") return "kanji.modeReading";
+  if (card.mode === "definition") return "kanji.modeDefinition";
+  if (item.kind === "sentence") return "learn.modeSentence";
+  if (item.kind === "alphabet") return "learn.modeLetter";
+  return "learn.modeWord";
+}
+
+function customLang(lang) {
+  if (lang === "zh") return "zh-CN";
+  return lang || "";
+}
+
+function customTextLang(text, fallback) {
+  const value = String(text || "");
+  if (/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value)) return "ja";
+  if (/[\p{Script=Hangul}]/u.test(value)) return "ko";
+  if (/[\p{Script=Han}]/u.test(value)) return fallback === "zh-CN" || fallback === "zh" ? "zh-CN" : (fallback || "zh-CN");
+  return fallback || "";
+}
+
+function renderCustomPlay(play, settle) {
+  const view = play.customView || { streak: 0, accuracy: "", left: play.cards.length };
+  const round = play.round;
+  const card = round.card;
+  const item = card.item;
+  const wrap = document.createElement("div");
+  wrap.className = "kanji-play";
+  if (item.kind === "sentence") wrap.classList.add("is-sentence");
+  else if (item.kind === "vocabulary" || item.kind === "alphabet") wrap.classList.add("is-vocab");
+
+  const span = (text) => {
+    const node = document.createElement("span");
+    node.textContent = text;
+    return node;
+  };
+  const meta = document.createElement("div");
+  meta.className = "kanji-play-meta";
+  meta.append(
+    span(formatTranslation("kanji.playModeLabel", { mode: getTranslation(customModeKey(card)) })),
+    span(formatTranslation("kanji.playRemaining", { left: view.left, total: play.cards.length })),
+    span(formatTranslation("kanji.playStreak", { n: view.streak })),
+    span(formatTranslation("kanji.playAccuracy", { n: view.accuracy }))
+  );
+  const starBtn = document.createElement("button");
+  starBtn.type = "button";
+  starBtn.className = "learn-play-star";
+  starBtn.setAttribute("aria-label", getTranslation("kanji.starredList"));
+  const paintStar = () => {
+    const on = play.customStarOn ? !!play.customStarOn(item) : false;
+    starBtn.textContent = on ? "★" : "☆";
+    starBtn.classList.toggle("is-on", on);
+  };
+  paintStar();
+  starBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (play.customToggleStar) play.customToggleStar(item);
+    paintStar();
+  });
+  bindStarCustomMenu(starBtn, item);
+  meta.append(starBtn);
+
+  const question = document.createElement("div");
+  question.className = "kanji-play-question";
+  if (card.mode === "kanji") {
+    const mark = document.createElement("div");
+    paintKanjiStamp(mark, item.key, item.text, play.customRefresh, false);
+    if (mark.childNodes.length) question.append(mark);
+    const prompt = document.createElement("div");
+    prompt.className = "kanji-play-text";
+    prompt.textContent = item.reading || item.label || "";
+    if (!String(item.key || "").startsWith("C:")) prompt.lang = "ja";
+    question.append(prompt);
+    if (play.customHints && item.label && item.reading) {
+      const hint = document.createElement("div");
+      hint.className = "kanji-play-meaning";
+      hint.textContent = item.label;
+      question.append(hint);
+    }
+  } else if (card.mode === "word") {
+    const translation = String(item.label || "").trim();
+    const source = String(item.text || "").trim();
+    const sentence = item.kind === "sentence";
+    const shown = sentence ? source : translation;
+    const prompt = document.createElement("div");
+    prompt.className = "vocab-play-word";
+    prompt.textContent = shown;
+    const promptLang = sentence ? customLang(item.lang) : customTextLang(shown, item.promptLang || getStoredLang());
+    if (promptLang) prompt.lang = promptLang === "zh" ? "zh-CN" : promptLang;
+    paintLearnKanmoji(prompt, shown, sentence ? item.lang : (item.promptLang || getStoredLang()), play.customRefresh);
+    question.append(prompt);
+    if (play.customHints && item.reading && translation) {
+      const hint = document.createElement("div");
+      hint.className = "kanji-play-meaning";
+      hint.textContent = item.reading;
+      question.append(hint);
+    }
+  } else if (card.mode === "definition") {
+    const shown = document.createElement("div");
+    shown.className = "vocab-play-word";
+    shown.textContent = round.question || item.text;
+    const questionLang = customLang(round.questionLang || item.lang);
+    if (questionLang) shown.lang = questionLang;
+    paintLearnKanmoji(shown, shown.textContent, round.questionLang || item.lang, play.customRefresh);
+    question.append(shown);
+  } else if (item.kind === "kanji") {
+    const glyph = document.createElement("div");
+    glyph.className = "kanji-play-glyph";
+    glyph.textContent = item.text;
+    glyph.lang = String(item.key || "").startsWith("C:") ? "zh-CN" : "ja";
+    paintKanjiStamp(glyph, item.key, item.text, play.customRefresh);
+    question.append(glyph);
+    if (card.mode === "reading" && play.customHints && item.label) {
+      const hint = document.createElement("div");
+      hint.className = "kanji-play-meaning";
+      hint.textContent = item.label;
+      question.append(hint);
+    }
+  } else {
+    const shown = document.createElement("div");
+    shown.className = "vocab-play-word";
+    shown.textContent = item.text;
+    const lang = customLang(item.lang);
+    if (lang) shown.lang = lang;
+    paintLearnKanmoji(shown, item.text, item.lang, play.customRefresh);
+    question.append(shown);
+    if (card.mode === "reading" && play.customHints && item.label) {
+      const hint = document.createElement("div");
+      hint.className = "kanji-play-meaning";
+      hint.textContent = item.label;
+      question.append(hint);
+    }
+  }
+  wrap.append(meta, question);
+
+  if (card.mode === "definition") {
+    const box = document.createElement("div");
+    box.className = "kanji-play-box";
+    const meaning = document.createElement("span");
+    meaning.className = "kanji-play-def";
+    meaning.textContent = round.shownLabel || item.label || item.text;
+    paintLearnKanmoji(meaning, meaning.textContent, round.shownLang || item.promptLang || getStoredLang(), play.customRefresh);
+    if (round.answered && !round.ok) {
+      const reveal = document.createElement("span");
+      reveal.className = "kanji-play-reveal" + (item.kind === "kanji" ? "" : " vocab-play-reveal");
+      reveal.textContent = round.answer || item.label || item.text;
+      const answerLang = customLang(round.answerLang || item.promptLang || getStoredLang());
+      if (item.kind === "kanji") reveal.lang = String(item.key || "").startsWith("C:") ? "zh-CN" : "ja";
+      else if (answerLang) reveal.lang = answerLang;
+      if (item.kind === "kanji") paintKanjiStamp(reveal, item.key, reveal.textContent, play.customRefresh);
+      else paintLearnKanmoji(reveal, reveal.textContent, round.answerLang || item.promptLang || getStoredLang(), play.customRefresh);
+      box.append(reveal);
+    }
+    box.append(meaning);
+    if (round.answered && round.ok && !round.correctShown) question.classList.add("is-correct");
+    else if (round.answered) box.classList.add(round.correctShown ? "is-correct" : "is-wrong");
+    const judges = document.createElement("div");
+    judges.className = "kanji-play-actions";
+    ["o", "x"].forEach((choice) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "transfer-lang-chip kanji-play-judge";
+      paintOxJudge(button, choice);
+      button.disabled = !!round.answered;
+      if (round.choice === choice) button.classList.add("is-active");
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (round.answered) return;
+        round.choice = choice;
+        settle((choice === "o") === !!round.correctShown);
+      });
+      judges.append(button);
+    });
+    const label = document.createElement("div");
+    label.className = "kanji-play-label";
+    label.textContent = getTranslation("kanji.playIsDefinitionCorrect");
+    wrap.append(box, label, judges);
+  } else {
+    const form = document.createElement("form");
+    form.className = "kanji-play-form";
+    const input = document.createElement("input");
+    input.className = "kanji-play-input";
+    input.type = "text";
+    input.autocomplete = "off";
+    input.placeholder = getTranslation("kanji.playAnswerPlaceholder");
+    input.disabled = !!round.answered;
+    if (round.typed) input.value = round.typed;
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = getTranslation("kanji.playSubmit");
+    submit.disabled = !!round.answered;
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (round.answered || !String(input.value || "").trim()) return;
+      round.typed = input.value;
+      settle(customAnswerOk(card, input.value));
+    });
+    form.append(input, submit);
+    const label = document.createElement("div");
+    label.className = "kanji-play-label";
+    label.textContent = getTranslation(customTypeKey(card));
+    wrap.append(label, form);
+  }
+
+  if (round.answered) {
+    let status = getTranslation("kanji.playCorrect");
+    if (!round.ok && round.choice === "x" && round.correctShown) status = getTranslation("kanji.playWrongWasCorrect");
+    else if (!round.ok) status = formatTranslation("kanji.playWrongAnswer", { answer: card.mode === "definition" ? (round.answer || item.label || item.text) : customExpected(card) });
+    const line = document.createElement("div");
+    line.className = "kanji-play-status " + (round.ok ? "is-correct" : "is-wrong");
+    line.textContent = status;
+    const cont = document.createElement("div");
+    cont.className = "kanji-play-status";
+    cont.textContent = getTranslation("kanji.playClickToContinue");
+    wrap.append(line, cont);
+  }
+  return wrap;
+}
+
+function paintUniversalCustomLessons(lessonList, play) {
+  lessonList.classList.remove("is-virtual");
+  const scrollTop = lessonList.scrollTop;
+  lessonList.textContent = "";
+  const rows = customLists();
+  if (!rows.length) {
+    const empty = document.createElement("li");
+    empty.className = "kanji-learn-empty";
+    empty.textContent = getTranslation("kanji.customListEmpty");
+    lessonList.appendChild(empty);
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  rows.forEach((list) => {
+    const li = document.createElement("li");
+    li.className = "custom-lesson-row";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = customListName(list);
+    button.dataset.custom = list.id;
+    if (play && play.customId === list.id) {
+      button.classList.add("is-active");
+      button.setAttribute("aria-current", "true");
+    }
+    const trash = document.createElement("button");
+    trash.type = "button";
+    trash.className = "custom-lesson-trash";
+    trash.textContent = "🗑";
+    trash.setAttribute("aria-label", getTranslation("kanji.customDelete"));
+    trash.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!confirmCustomDelete(list)) return;
+      closeCustomMenus();
+      saveCustomLists(customLists().filter((entry) => entry.id !== list.id));
+    });
+    li.append(button, trash);
+    fragment.appendChild(li);
+  });
+  lessonList.appendChild(fragment);
+  lessonList.scrollTop = scrollTop;
+}
+
+function buildCustomListPeek(listId) {
+  const list = customLists().find((item) => item.id === listId);
+  const fragment = document.createDocumentFragment();
+  const title = document.createElement("h3");
+  title.className = "kanji-learn-peek-title";
+  title.textContent = list ? customListName(list) : "";
+  fragment.append(title);
+  const rows = document.createElement("div");
+  rows.className = "vocab-peek-list";
+  const items = list && Array.isArray(list.items) ? list.items : [];
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "kanji-learn-empty";
+    empty.textContent = getTranslation("kanji.customListNoWords");
+    rows.append(empty);
+  }
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "vocab-peek-row";
+    const word = document.createElement("span");
+    word.className = "vocab-peek-word";
+    word.textContent = item.text || item.label || "";
+    if (item.kind === "kanji") word.lang = String(item.key || "").startsWith("C:") ? "zh-CN" : "ja";
+    else if (customLang(item.lang)) word.lang = customLang(item.lang);
+    const meaning = document.createElement("span");
+    meaning.className = "vocab-peek-meaning";
+    meaning.textContent = item.label && item.label !== item.text ? item.label : "";
+    row.append(word, meaning);
+    rows.append(row);
+  });
+  fragment.append(rows);
+  return fragment;
+}
+
+function bindStatusFilter(button, getFilter, setFilter) {
+  button.addEventListener("click", () => {
+    const order = ["todo", "custom", "completed"];
+    const next = order[(order.indexOf(getFilter()) + 1) % order.length];
+    setFilter(next || "todo");
+  });
+  button.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openStatusMenu(button, getFilter(), setFilter);
+  });
+}
+
+/* --------------------------------
    LEARN ALPHABET / VOCABULARY / SENTENCE PAGE
    learn-vocab.html?lang=de (vocabulary), learn-vocab.html?lang=de&area=sentence or &area=alphabet: one
-   language's words, sentences or letters, taught in the UI language. The curriculum comes from
-   NewLearn/data/vocab-<ui>-<lang>.js, sentence-<ui>-<lang>.js or alphabet-<ui>-<lang>.js (built by
-   NewLearn/tools/kb_build_learn_data.mjs from NewLearn/Vocabulary, NewLearn/Sentences and the copied alphabet), loaded when
-   the page opens. It plays like Kanji Learn: Linear goes through the curriculum's lessons, Exponential runs
+   language's words, sentences or letters, taught in the UI language. Vocabulary and sentences come from one
+   bank per language (NewLearn/data/bank-vocab-<code>.js and bank-sentence-<code>.js). A lesson builds its
+   pair from those banks. Alphabet still comes from NewLearn/data/alphabet-<ui>-<lang>.js.
+   It plays like Kanji Learn: Linear goes through the curriculum's lessons, Exponential runs
    every word in one line. Words (sentences, letters) are keyed "<lang>|<text>"; the vocab* (sentence*,
    alphabet*) keys hold their counts, learned outlines and Golden marks the way the kanji keys do for symbols.
    A lesson with no rows is not ready yet: it is listed in red and never played.
@@ -16919,6 +20268,8 @@ if (page === "learn-vocab") {
     negativeJump: [1, 0, 100000],
   };
   const GOLDEN_STREAK = [20, 1, 100000];
+  const PER_LESSON_DEFAULT = area === "sentence" ? 40 : area === "alphabet" ? 5 : 25;
+  const PER_LESSON_MAX = 200;
   const PLAY_MODES = ["definition", "word", "reading"];
   const PLAY_MODE_KEYS = { definition: "kanji.modeDefinition", word: TEXT.modeWord, reading: "kanji.modeReading" };
   const DEFINITION_CHOICES = 5;
@@ -16937,6 +20288,8 @@ if (page === "learn-vocab") {
   const editBtn = document.getElementById("vocab-learn-edit");
   const settingsBtn = document.getElementById("vocab-learn-settings");
   const settingsPanel = document.getElementById("vocab-learn-settings-panel");
+  const perLessonInput = document.getElementById("vocab-learn-per-lesson");
+  const perLessonLabel = document.getElementById("vocab-learn-per-lesson-label");
   const styleBtn = document.getElementById("vocab-learn-style");
   const styleRows = Array.from(settingsPanel.querySelectorAll("[data-learn-style]"));
   const expInputs = Array.from(settingsPanel.querySelectorAll("input[data-exp]"));
@@ -16945,6 +20298,7 @@ if (page === "learn-vocab") {
   const readingRow = document.getElementById("vocab-learn-reading-row");
   const hintsRow = document.getElementById("vocab-learn-hints-row");
   const hintsInput = document.getElementById("vocab-learn-hints");
+  const kanmojiInput = document.getElementById("vocab-learn-kanmoji");
   const originsInput = document.getElementById("vocab-learn-origins");
   const resetCountsBtn = document.getElementById("vocab-learn-reset-counts");
   const sidebarToggle = document.getElementById("vocab-learn-sidebar-toggle");
@@ -16981,8 +20335,10 @@ if (page === "learn-vocab") {
       exp[name] = value == null ? EXP_SETTINGS[name][0] : value;
     });
     const goldenStreak = rangedValue(GOLDEN_STREAK, saved.goldenStreak);
+    const perLesson = Math.round(Number(saved.perLesson));
     return {
       style: LEARN_STYLES.includes(saved.style) ? saved.style : "linear",
+      perLesson: perLesson >= 1 ? Math.min(perLesson, PER_LESSON_MAX) : PER_LESSON_DEFAULT,
       exp,
       goldenStreak: goldenStreak == null ? GOLDEN_STREAK[0] : goldenStreak,
       modes: {
@@ -16997,15 +20353,28 @@ if (page === "learn-vocab") {
 
   const settings = readSettings();
   const completed = new Set(readJson(VOCAB_COMPLETED_KEY, []));
+  // Exponential marks a letter known after one correct answer. That must not finish a linear alphabet
+  // lesson, so linear alphabet progress is stored on its own.
+  const ALPHABET_LINEAR_KEY = "alphabetLinearDone";
+  const linearDone = new Set(alphabet ? readJson(ALPHABET_LINEAR_KEY, []) : []);
   let stats = readJson(VOCAB_STATS_KEY, {});
   const golden = new Set(readJson(VOCAB_GOLDEN_KEY, []));
   const playStars = new Set(readJson(VOCAB_STARRED_KEY, []));
   let loadPrompt = null;
   let loadAnswer = null;
+  let userMoved = false;
+  let autoNav = false;
+  let practiceStarted = false;
+  let shownLessonCount = 0;
+  let expItemsSeen = 0;
   // This language's last RECENT_ANSWERS answers, oldest first: 1 for correct, 0 for wrong.
   let recentAnswers = [].concat(readJson(VOCAB_RECENT_KEY, {})[lang] || []).slice(-RECENT_ANSWERS);
   // lessons: [{ name, keys }] in curriculum order; items: every word once, in the order it is first taught.
   const lessons = [];
+  const lessonSource = [];
+  let lessonPacked = 0;
+  let lessonPackedSize = settings.perLesson;
+  let lessonSourceClosed = false;
   const items = [];
   // Parsed cards are built when a lesson is played. The line text stays here so a large plan does not
   // keep a full object, meaning list and set for every row at once.
@@ -17018,6 +20387,8 @@ if (page === "learn-vocab") {
   const WORD_CACHE = 4000;
   let answersByLabel = new Map();
   let pendingLabels = null;
+  // EN-JA and JA-EN of the same pair are one card. The second direction is not another lesson.
+  let seenPairs = new Set();
   let heavy = false;
   let hasReadings = false;
   let loaded = false;
@@ -17064,13 +20435,20 @@ if (page === "learn-vocab") {
   function markLearned(key) {
     const info = infoFor(key);
     let changed = false;
+    let linearChanged = false;
+    const fromLinear = alphabet && !(play && play.exp);
     [key, info && info.listKey].forEach((id) => {
       if (id && !completed.has(id)) {
         completed.add(id);
         changed = true;
       }
+      if (fromLinear && id && !linearDone.has(id)) {
+        linearDone.add(id);
+        linearChanged = true;
+      }
     });
     if (changed) saveCompleted();
+    if (linearChanged) localStorage.setItem(ALPHABET_LINEAR_KEY, JSON.stringify(Array.from(linearDone)));
   }
 
   function accuracyText() {
@@ -17082,7 +20460,8 @@ if (page === "learn-vocab") {
   const lessonCount = () => lessons.length;
   const lessonKeys = (n) => (lessons[n - 1] ? lessons[n - 1].keys : []);
   const isLessonReady = (n) => lessonKeys(n).length > 0;
-  const isLessonCompleted = (n) => isLessonReady(n) && lessonKeys(n).every((key) => completed.has(key));
+  const lessonLearned = (key) => (alphabet ? linearDone : completed).has(key);
+  const isLessonCompleted = (n) => isLessonReady(n) && lessonKeys(n).every(lessonLearned);
   const activeModes = () => PLAY_MODES.filter((mode) => settings.modes[mode]);
   const lessonTitle = (n) => `${formatTranslation("kanji.learnLesson", { n })}: ${lessons[n - 1].name}`;
 
@@ -17124,8 +20503,7 @@ if (page === "learn-vocab") {
   // Case, spacing and punctuation never matter when comparing meanings.
   const plainText = (text) => lower(text).replace(/\p{P}/gu, "").replace(/\s+/g, " ").trim();
 
-  // A word that appears in several lessons is one word: its meanings are merged, first lesson first. A sentence
-  // keeps its translation whole, commas and all. A word written as several forms ("endangered, endangers")
+  // A repeated line with a different translation is its own card. A word written as several forms ("endangered, endangers")
   // shows its first few and accepts any of them. The line stays a string until a card needs it.
   function fieldsOf(line) {
     const text = String(line || "");
@@ -17181,9 +20559,13 @@ if (page === "learn-vocab") {
         });
       });
     }
-    const listKey = planCodes.length ? answer + "|" + fields.word : "";
+    const body = key.slice(key.indexOf("|") + 1);
+    const listKey = planCodes.length ? answer + "|" + body : "";
     return {
       key,
+      cardPrompt: promptOfKey(key),
+      cardAnswer: answer,
+      cardWord: sourceWord,
       word: forms.slice(0, LABEL_MEANINGS).join(", "),
       forms,
       reading: fields.reading || "",
@@ -17305,6 +20687,7 @@ if (page === "learn-vocab") {
     const answer = loadAnswer || lang;
     const prompt = loadPrompt || getStoredLang();
     const prefix = planCodes.length ? prompt + "-" + answer + "|" : lang + "|";
+    const seenKeys = new Set();
     const group = [];
     let lesson = 0;
     let row = 0;
@@ -17326,7 +20709,7 @@ if (page === "learn-vocab") {
             const line = String(rows[row]);
             const fields = fieldsOf(line);
             if (!fields.word) continue;
-            const key = prefix + fields.word;
+            const key = learnStudyKey(prefix, fields.word, seenKeys);
             rememberLine(key, line, fields);
             if (!bucket.keys.includes(key)) bucket.keys.push(key);
           }
@@ -17377,6 +20760,152 @@ if (page === "learn-vocab") {
   // Rōmaji and Korean romanization: only the letters count, so "ō" = "o" and spaces or dashes are ignored.
   const romanKey = (text) => String(text || "").toLowerCase().normalize("NFD").replace(/[^a-z]/g, "");
 
+  let jaWordReadings = null;
+  let jaCharReadings = null;
+  let jaReadingMax = 1;
+
+  function prepareJaReadings() {
+    if (jaWordReadings) return;
+    jaWordReadings = new Map();
+    jaCharReadings = new Map();
+    const add = (map, key, reading) => {
+      if (!key || !reading) return;
+      const list = map.get(key);
+      if (!list) map.set(key, [reading]);
+      else if (!list.includes(reading)) list.push(reading);
+    };
+    const fill = (map, packed) => {
+      String(packed || "").split("\n").forEach((line) => {
+        if (!line) return;
+        const parts = line.split("\u001f");
+        for (let i = 1; i < parts.length; i++) add(map, parts[0], parts[i]);
+        if (parts[0] && parts[0].length > jaReadingMax) jaReadingMax = parts[0].length;
+      });
+    };
+    fill(jaWordReadings, window.JA_WORD_READINGS);
+    fill(jaCharReadings, window.JA_CHAR_READINGS);
+  }
+
+  // Dictionary words first, then a single kanji's readings. Kana is already itself.
+  function jaEdges(text, index) {
+    const edges = [];
+    const have = new Set();
+    const push = (len, reading) => {
+      const id = len + "\0" + reading;
+      if (!reading || have.has(id)) return;
+      have.add(id);
+      edges.push({ len, reading });
+    };
+    const limit = Math.min(jaReadingMax, text.length - index);
+    for (let size = limit; size >= 2; size--) {
+      const list = jaWordReadings.get(text.slice(index, index + size));
+      if (list) list.forEach((reading) => push(size, reading));
+    }
+    const ch = text[index];
+    if ((ch >= "\u3041" && ch <= "\u3096") || ch === "\u30fc") {
+      push(1, ch);
+      return edges;
+    }
+    const one = jaWordReadings.get(ch);
+    if (one) one.forEach((reading) => push(1, reading));
+    const chars = jaCharReadings.get(ch);
+    if (chars) chars.forEach((reading) => push(1, reading));
+    if (!edges.length) push(1, ch);
+    return edges;
+  }
+
+  function jaConsume(text) {
+    const memo = new Map();
+    return (pos, reading) => {
+      const key = pos + "\0" + reading;
+      const cached = memo.get(key);
+      if (cached) return cached;
+      const ends = [];
+      const seen = new Set([pos + ":0"]);
+      const queue = [[pos, 0]];
+      while (queue.length) {
+        const [i, r] = queue.pop();
+        if (r === reading.length) {
+          ends.push(i);
+          continue;
+        }
+        if (i >= text.length) continue;
+        const edges = jaEdges(text, i);
+        for (let e = 0; e < edges.length; e++) {
+          const edge = edges[e];
+          if (!reading.startsWith(edge.reading, r)) continue;
+          const mark = (i + edge.len) + ":" + (r + edge.reading.length);
+          if (seen.has(mark)) continue;
+          seen.add(mark);
+          queue.push([i + edge.len, r + edge.reading.length]);
+        }
+      }
+      memo.set(key, ends);
+      return ends;
+    };
+  }
+
+  // Hiragana and the kanji read that way are the same answer, in either direction.
+  function jaSameReading(a, b) {
+    prepareJaReadings();
+    if (!jaWordReadings.size || a === b) return a === b;
+    const kanaOnly = (text) => /^[\u3041-\u3096\u30fc]+$/.test(text);
+    if (kanaOnly(a)) return jaConsume(b)(0, a).includes(b.length);
+    if (kanaOnly(b)) return jaConsume(a)(0, b).includes(a.length);
+    const consumeA = jaConsume(a);
+    const consumeB = jaConsume(b);
+    const width = b.length + 1;
+    const seen = new Uint8Array((a.length + 1) * width);
+    const queue = [[0, 0]];
+    seen[0] = 1;
+    while (queue.length) {
+      const [i, j] = queue.pop();
+      if (i === a.length && j === b.length) return true;
+      if (i < a.length) {
+        const edges = jaEdges(a, i);
+        for (let e = 0; e < edges.length; e++) {
+          const edge = edges[e];
+          const ends = consumeB(j, edge.reading);
+          for (let c = 0; c < ends.length; c++) {
+            const id = (i + edge.len) * width + ends[c];
+            if (seen[id]) continue;
+            seen[id] = 1;
+            queue.push([i + edge.len, ends[c]]);
+          }
+        }
+      }
+      if (j < b.length) {
+        const edges = jaEdges(b, j);
+        for (let e = 0; e < edges.length; e++) {
+          const edge = edges[e];
+          const ends = consumeA(i, edge.reading);
+          for (let c = 0; c < ends.length; c++) {
+            const id = ends[c] * width + (j + edge.len);
+            if (seen[id]) continue;
+            seen[id] = 1;
+            queue.push([ends[c], j + edge.len]);
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  // The vocabulary popup for the whole prompt is also a right answer: "hot water" is both あついみず and お湯.
+  function helpAnswers(info, typed) {
+    const promptCode = info.promptLang || getStoredLang();
+    const dict = promptCode === lang ? toUi : promptCode === getStoredLang() ? toLearned : null;
+    const list = dict && dict.get(plainIn(promptCode, info.label));
+    if (!list) return false;
+    const code = info.answerLang || lang;
+    return list.some((answer) => {
+      const plain = plainWord(answer, code);
+      if (!plain) return false;
+      if (plain === typed) return true;
+      return !alphabet && code === "ja" && jaSameReading(typed, plain);
+    });
+  }
+
   // Any word (or sentence) with the same definition is accepted too: "Ciao!" answers "Bye!" as well as "Arrivederci!".
   // Pinyin letters can also be typed with tone numbers ("ma3" for "mǎ").
   function wordMatches(info, input) {
@@ -17385,6 +20914,8 @@ if (page === "learn-vocab") {
     if (!typed) return false;
     if (alphabet && code === "zh" && pinyinKey(input) === pinyinKey(info.word)) return true;
     if (info.forms.some((form) => typed === plainWord(form, code))) return true;
+    if (!alphabet && code === "ja" && info.forms.some((form) => jaSameReading(typed, plainWord(form, code)))) return true;
+    if (helpAnswers(info, typed)) return true;
     if (alphabet && isKatakana(typed) !== isKatakana(info.word)) return false;
     return (answersByLabel.get(plainText(info.label)) || new Set()).has(typed);
   }
@@ -17523,17 +21054,58 @@ if (page === "learn-vocab") {
     promptLang: info.promptLang,
   });
 
-  // Wrong definitions come from the whole curriculum; a word sharing any meaning with the right one is skipped,
-  // so a "wrong" definition is never actually right.
+  // The question is the word being learned. When one side is the UI language, that side is the
+  // definition, so an English UI never asks whether an English word matches another English word.
+  function definitionAsksForeign(info) {
+    const ui = getStoredLang();
+    const question = info.answerLang || lang;
+    const gloss = info.promptLang || ui;
+    return !(question === ui && gloss !== ui);
+  }
+
+  function glossLetters(text) {
+    return plainText(text).match(/\p{L}/gu) || [];
+  }
+
+  function sharedLetterCount(a, b) {
+    const left = new Set(glossLetters(a));
+    const seen = new Set();
+    let count = 0;
+    glossLetters(b).forEach((ch) => {
+      if (seen.has(ch) || !left.has(ch)) return;
+      seen.add(ch);
+      count += 1;
+    });
+    return count;
+  }
+
+  // Wrong definitions stay in the correct definition's language. Words that start with the same
+  // letter come first ("apple", "angry"); closer spellings come before the rest.
   function pickDefinitions(info, count, exclude) {
     const taken = new Set([info.label, ...(exclude || [])].map(plainText));
-    const picks = [];
-    for (let guard = 0; picks.length < count && guard < count * 60 && items.length > 1; guard++) {
-      const other = parseInfo(items[Math.floor(Math.random() * items.length)]);
-      if (!other || !other.label || taken.has(plainText(other.label))) continue;
+    const glossLang = info.promptLang || getStoredLang();
+    const start = glossLetters(info.label)[0] || "";
+    const same = [];
+    const rest = [];
+    const limit = Math.min(items.length, 4000);
+    const origin = items.length ? Math.floor(Math.random() * items.length) : 0;
+    for (let step = 0; step < limit && same.length < count * 12; step++) {
+      const other = parseInfo(items[(origin + step) % items.length]);
+      if (!other || !other.label || (other.promptLang || getStoredLang()) !== glossLang) continue;
+      const plain = plainText(other.label);
+      if (!plain || taken.has(plain)) continue;
       if (other.meanings.some((meaning) => info.meaningSet.has(plainText(meaning)))) continue;
-      taken.add(plainText(other.label));
-      picks.push(definitionOf(other));
+      taken.add(plain);
+      const row = definitionOf(other);
+      if (start && glossLetters(other.label)[0] === start) same.push(row);
+      else rest.push(row);
+    }
+    const byOverlap = (a, b) => sharedLetterCount(b.label, info.label) - sharedLetterCount(a.label, info.label);
+    same.sort(byOverlap);
+    const picks = same.slice(0, count);
+    if (picks.length < count) {
+      rest.sort(byOverlap);
+      picks.push(...rest.slice(0, count - picks.length));
     }
     return picks;
   }
@@ -17549,14 +21121,48 @@ if (page === "learn-vocab") {
 
   // A completed lesson is replayed in full; otherwise only the words that are not learned yet are dealt.
   // A saved play passes the words it was dealt (only), so it comes back the same.
+  // The other direction of the same pair. Streak, golden, notes and stars stay on the original key.
+  function flipInfo(info) {
+    if (!info || info.flipped) return null;
+    const meanings = (info.meanings || []).filter(Boolean);
+    const forms = (info.forms || []).filter(Boolean);
+    if (!meanings.length || !forms.length) return null;
+    return {
+      key: info.key,
+      listKey: info.listKey,
+      sourceWord: info.sourceWord,
+      cardPrompt: info.cardPrompt || info.promptLang,
+      cardAnswer: info.cardAnswer || info.answerLang,
+      cardWord: info.cardWord || info.sourceWord,
+      word: meanings.slice(0, LABEL_MEANINGS).join(", "),
+      forms: meanings,
+      meanings: forms,
+      label: forms.slice(0, LABEL_MEANINGS).join(", "),
+      meaningSet: new Set(forms.map(plainText)),
+      reading: "",
+      answerLang: info.promptLang,
+      promptLang: info.answerLang,
+      flipped: true,
+    };
+  }
+
   function buildDeck(n, only) {
     const inLesson = lessonKeys(n);
     const all = isLessonCompleted(n);
-    const dealt = only ? (key) => only.has(key) : (key) => all || !completed.has(key);
+    const dealt = only ? (key) => only.has(key) : (key) => all || !lessonLearned(key);
     const lessonWords = inLesson.filter(dealt).map((key) => infoFor(key)).filter(Boolean);
     const cards = [];
     lessonWords.forEach((info) => {
-      modesFor(info).forEach((mode) => cards.push({ id: `${info.key}|${mode}`, mode, info }));
+      const back = flipInfo(info);
+      modesFor(info).forEach((mode) => {
+        if (mode === "definition" && !definitionAsksForeign(info)) return;
+        cards.push({ id: `${info.key}|${mode}`, mode, info });
+      });
+      if (!back) return;
+      modesFor(back).forEach((mode) => {
+        if (mode === "definition" && !definitionAsksForeign(back)) return;
+        cards.push({ id: `${info.key}|${mode}|back`, mode, info: back });
+      });
     });
     return { inLesson, words: lessonWords, cards };
   }
@@ -17575,6 +21181,7 @@ if (page === "learn-vocab") {
 
   // progress ({ words: [keys], correct: [card ids], missed: [keys] }) picks a saved play back up.
   function startLesson(n, replay, progress) {
+    if (!autoNav) userMoved = true;
     if (n && !isLessonReady(n)) n = firstTodoLesson();
     currentLesson = n;
     revealLessonId = n || 0;
@@ -17601,9 +21208,60 @@ if (page === "learn-vocab") {
     render();
   }
 
+  function fillCustomLessonItems(items) {
+    return (items || []).map((item) => {
+      let text = item.text || "";
+      let label = String(item.label || "").trim();
+      const info = item.key ? infoFor(item.key) : null;
+      if (info) {
+        text = text || info.cardWord || info.word || "";
+        if (!label) label = String(info.label || "").trim();
+      }
+      if (!label && text && item.lang) {
+        const bucket = dictByLang.get(item.lang);
+        const hit = bucket && bucket.get(plainWord(text, item.lang));
+        if (hit && hit.gloss && hit.gloss !== text) label = hit.gloss;
+      }
+      if (text === (item.text || "") && label === String(item.label || "").trim()) return item;
+      const answers = item.answers && item.answers.length ? item.answers : (text ? [text] : []);
+      return Object.assign({}, item, { text, label, answers });
+    });
+  }
+
+  function startCustomLesson(list) {
+    if (!autoNav) userMoved = true;
+    revealLessonId = 0;
+    const modes = activeModes();
+    const learnedLang = planCodes.length ? "" : lang;
+    customPrepareList(list, (ready) => {
+      const items = fillCustomLessonItems(ready.items);
+      if (items.some((item, index) => item !== ready.items[index])) {
+        saveCustomLists(customLists().map((entry) => (
+          entry.id === ready.id ? { id: entry.id, name: entry.name, items } : entry
+        )));
+      }
+      play = customPlayFromList(Object.assign({}, ready, { items }), modes);
+      play.customHints = !!settings.hints;
+      play.customRefresh = () => render();
+      play.customStarOn = (item) => item.kind === area && (!learnedLang || item.lang === learnedLang) && playStars.has(item.key);
+      play.customToggleStar = (item) => {
+        if (item.kind !== area || (learnedLang && item.lang !== learnedLang)) return;
+        if (playStars.has(item.key)) playStars.delete(item.key);
+        else playStars.add(item.key);
+        localStorage.setItem(VOCAB_STARRED_KEY, JSON.stringify([...playStars]));
+      };
+      if (!play.message) customDeal(play);
+      render();
+    });
+  }
+
   function dealNext() {
     if (play.exp) {
       dealExp();
+      return;
+    }
+    if (play.universal) {
+      customDeal(play);
       return;
     }
     const pool = remainingCards();
@@ -17620,6 +21278,11 @@ if (page === "learn-vocab") {
 
   // A wrong card comes back until it is answered correctly, but its word is not learned in this play.
   function settleRound(ok) {
+    if (play && play.universal) {
+      streak = customSettle(play, ok, streak);
+      render();
+      return;
+    }
     const round = play.round;
     const key = round.card.info.key;
     round.answered = true;
@@ -17707,14 +21370,26 @@ if (page === "learn-vocab") {
       return;
     }
     const card = expCard(key);
-    const modes = modesFor(info);
+    const back = flipInfo(info);
+    const variants = [];
+    [info, back].filter(Boolean).forEach((side) => {
+      modesFor(side).forEach((mode) => {
+        if (mode === "definition" && !definitionAsksForeign(side)) return;
+        variants.push({ mode, info: side, id: `${key}|${mode}${side.flipped ? "|back" : ""}` });
+      });
+    });
+    if (!variants.length) {
+      play.round = null;
+      play.finished = true;
+      return;
+    }
     const recent = Array.isArray(card.recent) ? card.recent : [];
-    const fresh = modes.filter((mode) => !recent.includes(mode));
-    const pool = fresh.length ? fresh : modes;
-    const mode = pool[Math.floor(Math.random() * pool.length)];
-    const keep = modes.length - 1;
-    card.recent = keep > 0 ? [...recent, mode].slice(-keep) : [];
-    play.round = makeRound({ id: `${key}|${mode}`, mode, info });
+    const fresh = variants.filter((variant) => !recent.includes(variant.id));
+    const pool = fresh.length ? fresh : variants;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    const keep = variants.length - 1;
+    card.recent = keep > 0 ? [...recent, pick.id].slice(-keep) : [];
+    play.round = makeRound({ id: pick.id, mode: pick.mode, info: pick.info });
     play.round.cardGap = card.interval;
   }
 
@@ -17760,6 +21435,14 @@ if (page === "learn-vocab") {
 
   // o: the shown definition is right. x: it is wrong, then the right one is picked from a short list.
   function judge(choice) {
+    userMoved = true;
+    if (play && play.universal) {
+      const round = play.round;
+      if (!round || round.answered || round.card.mode !== "definition") return;
+      round.choice = choice;
+      settleRound((choice === "o") === !!round.correctShown);
+      return;
+    }
     const round = play && play.round;
     if (!round || round.answered || round.card.mode !== "definition" || round.phase !== 1) return;
     round.choice = choice;
@@ -17783,6 +21466,7 @@ if (page === "learn-vocab") {
   }
 
   function submitTyped(value) {
+    userMoved = true;
     const round = play && play.round;
     if (!round || round.answered || round.card.mode === "definition" || !value.trim()) return;
     round.typed = value;
@@ -17850,6 +21534,7 @@ if (page === "learn-vocab") {
   // Only the rows on screen are built. A long course is thousands of lessons, and a button for every one
   // of them is enough to stall the page.
   function paintLessons(force) {
+    if (filter === "custom") return;
     const shown = lessonView;
     const rowH = lessonRowHeight();
     const scrollTop = lessonList.scrollTop;
@@ -17862,7 +21547,7 @@ if (page === "learn-vocab") {
     paintedLessons = key;
     const fragment = document.createDocumentFragment();
     if (!shown.length) {
-      const emptyKey = filter === "completed" ? "kanji.noCompletedLessons" : "kanji.noTodoLessons";
+      const emptyKey = filter === "completed" ? "kanji.noCompletedLessons" : (lessonCount() ? "kanji.noTodoLessons" : TEXT.empty);
       fragment.appendChild(el("li", "kanji-learn-empty", getTranslation(emptyKey)));
     } else {
       const top = document.createElement("li");
@@ -17904,10 +21589,20 @@ if (page === "learn-vocab") {
     if (Math.abs(lessonList.scrollTop - scrollTop) > 1) lessonList.scrollTop = scrollTop;
   }
 
+  function paintCustomLessons() {
+    paintUniversalCustomLessons(lessonList, play);
+  }
+
   function renderSidebar() {
-    filterBtn.textContent = getTranslation(filter === "completed" ? "kanji.learnCompleted" : "kanji.learnTodo");
+    const label = filter === "completed" ? "kanji.learnCompleted" : filter === "custom" ? "kanji.learnCustom" : "kanji.learnTodo";
+    filterBtn.textContent = getTranslation(label);
     filterBtn.classList.toggle("is-active", filter === "completed");
-    filterBtn.setAttribute("aria-pressed", filter === "completed" ? "true" : "false");
+    filterBtn.classList.toggle("is-custom", filter === "custom");
+    filterBtn.setAttribute("aria-pressed", filter === "todo" ? "false" : "true");
+    if (filter === "custom") {
+      paintCustomLessons();
+      return;
+    }
     lessonList.classList.add("is-virtual");
     lessonView = lessonsInFilter();
     if (revealLessonId) {
@@ -17932,9 +21627,11 @@ if (page === "learn-vocab") {
   function fillDefinition(node, definition, reveal) {
     const shownWord = el("span", `kanji-play-reveal vocab-play-reveal${reveal ? "" : " is-hidden"}`, definition.word);
     shownWord.lang = definition.answerLang || lang;
+    if (reveal) paintLearnKanmoji(shownWord, definition.word, definition.answerLang || lang, () => render());
     appendOrigin(shownWord, definition.answerLang || lang);
     if (!reveal) shownWord.setAttribute("aria-hidden", "true");
     const meaning = el("span", "kanji-play-def", definition.label);
+    paintLearnKanmoji(meaning, definition.label, definition.promptLang || getStoredLang(), () => render());
     appendOrigin(meaning, definition.promptLang || getStoredLang());
     node.append(shownWord, meaning);
   }
@@ -17950,11 +21647,11 @@ if (page === "learn-vocab") {
 
     const judges = el("div", "kanji-play-actions");
     ["o", "x"].forEach((choice) => {
-      const button = el("button", "transfer-lang-chip kanji-play-judge", choice);
+      const button = el("button", "transfer-lang-chip kanji-play-judge");
       button.type = "button";
+      paintOxJudge(button, choice);
       button.disabled = round.answered || round.phase !== 1;
       if (round.choice === choice) button.classList.add("is-active");
-      appendOxHint(button, choice);
       button.addEventListener("click", () => judge(choice));
       judges.append(button);
     });
@@ -18026,11 +21723,26 @@ if (page === "learn-vocab") {
         done = formatTranslation(TEXT.lessonMissed, { learned: total - play.missed.size, total });
       }
       const actions = el("div", "kanji-play-actions");
-      actions.append(chipButton("kanji.playAgain", () => startLesson(play.lesson, true)));
-      const next = nextTodoLesson(play.lesson);
-      if (next) actions.append(chipButton("kanji.playNextLesson", () => startLesson(next), "is-active kanji-play-next"));
+      actions.append(chipButton("kanji.playAgain", () => {
+        if (play.customId) {
+          const list = customLists().find((item) => item.id === play.customId);
+          if (list) startCustomLesson(list);
+        } else startLesson(play.lesson, true);
+      }));
+      if (!play.customId) {
+        const next = nextTodoLesson(play.lesson);
+        if (next) actions.append(chipButton("kanji.playNextLesson", () => startLesson(next), "is-active kanji-play-next"));
+      }
       wrap.append(el("div", "kanji-play-done", done), actions);
       return wrap;
+    }
+    if (play.universal) {
+      play.customView = {
+        streak,
+        accuracy: accuracyText(),
+        left: play.cards.filter((card) => !play.correct.has(card.id)).length
+      };
+      return renderCustomPlay(play, (ok) => settleRound(ok));
     }
 
     const { round } = play;
@@ -18064,21 +21776,32 @@ if (page === "learn-vocab") {
       starBtn.textContent = playStars.has(starKey) ? "★" : "☆";
       starBtn.classList.toggle("is-on", playStars.has(starKey));
     });
+    bindStarCustomMenu(starBtn, () => customLearnItem(
+      planCodes.length ? planArea : area,
+      info.cardAnswer || info.answerLang || lang,
+      starKey,
+      info.cardWord || info.word,
+      info.flipped ? info.word : info.label,
+      info.flipped ? "" : info.reading
+    ));
     meta.append(starBtn);
 
     // Word mode asks from the meaning, the other modes show the word. With hints on, Word mode adds the
     // reading and Reading mode adds the meaning. Both are the same size, a bit smaller for sentences.
     const question = el("div", "kanji-play-question");
     if (sentences) wrap.classList.add("is-sentence");
+    else if (area === "vocabulary") wrap.classList.add("is-vocab");
     if (card.mode === "word") {
       const prompt = el("div", "vocab-play-word", info.label);
       prompt.lang = info.promptLang || getStoredLang();
+      paintLearnKanmoji(prompt, info.label, info.promptLang || getStoredLang(), () => render());
       appendOrigin(prompt, info.promptLang || getStoredLang());
       question.append(prompt);
       if (info.reading && settings.hints) question.append(el("div", "kanji-play-meaning", info.reading));
     } else {
       const shownWord = el("div", "vocab-play-word", info.word);
       shownWord.lang = info.answerLang || lang;
+      paintLearnKanmoji(shownWord, info.word, info.answerLang || lang, () => render());
       appendOrigin(shownWord, info.answerLang || lang);
       question.append(shownWord);
       if (card.mode === "reading" && settings.hints) question.append(el("div", "kanji-play-meaning", info.label));
@@ -18124,7 +21847,13 @@ if (page === "learn-vocab") {
   }
 
   function learnCardKey(info) {
-    return area + "|" + (info.promptLang || getStoredLang()) + "|" + (info.answerLang || lang) + "|" + (info.sourceWord || info.word);
+    const body = String(info.key || "").slice(String(info.key || "").indexOf("|") + 1);
+    const mark = body.indexOf("\u001e");
+    const extra = mark >= 0 ? body.slice(mark) : "";
+    const prompt = info.cardPrompt || info.promptLang || getStoredLang();
+    const answer = info.cardAnswer || info.answerLang || lang;
+    const word = info.cardWord || info.sourceWord || info.word;
+    return area + "|" + prompt + "|" + answer + "|" + word + extra;
   }
 
   const notesPanel = document.getElementById("vocab-learn-notes");
@@ -18200,13 +21929,15 @@ if (page === "learn-vocab") {
   function renderLesson() {
     body.textContent = "";
     if (!loaded) return;
-    if (!items.length) {
+    if (!items.length && !(play && play.customId)) {
       body.appendChild(el("div", "kanji-empty", getTranslation(TEXT.empty)));
       return;
     }
-    if (!play || (!play.exp && !currentLesson)) return;
+    if (!play || (!play.exp && !currentLesson && !play.customId)) return;
     const head = el("div", "kanji-learn-lesson-head");
-    if (play.exp) {
+    if (play.customId) {
+      head.append(el("h2", "", play.customName || ""));
+    } else if (play.exp) {
       const known = items.filter((key) => completed.has(key)).length;
       const goldenCount = items.filter((key) => golden.has(key)).length;
       const counts = el("span", "kanji-learn-known");
@@ -18222,20 +21953,18 @@ if (page === "learn-vocab") {
     focusPlay();
   }
 
-  // Exponential has no lessons, so the lesson list and its toggle are hidden; so is everything but the
-  // message when there is no vocabulary for this language yet. Nothing is saved before the words load.
+  // The lesson list stays available during Exponential so custom lessons remain on screen.
   function render() {
     hideWordHelp();
-    const exp = settings.style === "exponential";
-    const ready = loaded && items.length > 0;
-    sidebar.classList.toggle("hidden", exp || !ready);
-    sidebarToggle.classList.toggle("hidden", exp || !ready);
+    const ready = loaded && (items.length > 0 || filter === "custom" || (play && play.customId));
+    sidebar.classList.toggle("hidden", !ready);
+    sidebarToggle.classList.toggle("hidden", !ready);
     saveBtn.classList.toggle("hidden", !ready);
     const roundInfo = play && play.round && play.round.card && play.round.card.info;
     const canEditCard = !!(ready && roundInfo && aficCanEditPair(roundInfo.promptLang || getStoredLang(), roundInfo.answerLang || lang));
     if (editBtn) editBtn.classList.toggle("hidden", !canEditCard);
     settingsBtn.classList.toggle("hidden", !ready);
-    if (!exp && ready) renderSidebar();
+    if (ready) renderSidebar();
     renderLesson();
     renderNotes();
     syncEditor();
@@ -18260,7 +21989,7 @@ if (page === "learn-vocab") {
     if (oxKeybindDialogOpen()) return;
     if (!play || !play.round || !play.round.answered || e.button !== 0) return;
     if (!settingsPanel.classList.contains("hidden")) return;
-    if (e.target.closest && e.target.closest(".navbar, .kanji-learn-bar, .kanji-learn-sidebar, #vocab-learn-notes, #vocab-learn-editor, .kanji-learn-settings-panel, .ox-keybind-dialog, .learn-play-star, .afic-notes")) return;
+    if (e.target.closest && e.target.closest(".navbar, .kanji-learn-bar, .kanji-learn-sidebar, #vocab-learn-notes, #vocab-learn-editor, .kanji-learn-settings-panel, .ox-keybind-dialog, .learn-play-star, .afic-notes, .custom-star-menu, .custom-status-menu, .learn-kanmoji-token, .learn-kanmoji-picker")) return;
     if (!e.target.closest(".kanji-play") && e.target.closest("a, button, input, select, textarea, label")) return;
     e.preventDefault();
     e.stopPropagation();
@@ -18311,13 +22040,26 @@ if (page === "learn-vocab") {
 
   sidebarToggle.addEventListener("click", () => setSidebarOpen(sidebar.classList.contains("is-collapsed")));
 
-  filterBtn.addEventListener("click", () => {
-    filter = filter === "completed" ? "todo" : "completed";
+  bindStatusFilter(filterBtn, () => filter, (next) => {
+    filter = next;
     lessonList.scrollTop = 0;
     renderSidebar();
   });
+  customListListener = () => {
+    if (play && play.customId && !customLists().some((item) => item.id === play.customId)) {
+      play = null;
+      body.textContent = "";
+    }
+    if (loaded) renderSidebar();
+  };
 
   lessonList.addEventListener("click", (e) => {
+    const custom = e.target.closest("button[data-custom]");
+    if (custom) {
+      const list = customLists().find((item) => item.id === custom.dataset.custom);
+      if (list) startCustomLesson(list);
+      return;
+    }
     const button = e.target.closest("button[data-lesson]");
     if (button) startLesson(Number(button.dataset.lesson));
   });
@@ -18329,7 +22071,8 @@ if (page === "learn-vocab") {
   let suppressContextMenu = false;
 
   function lessonButtonOf(node) {
-    return node && node.closest ? node.closest("#vocab-learn-lessons button[data-lesson]") : null;
+    if (!node || !node.closest) return null;
+    return node.closest("#vocab-learn-lessons button[data-custom], #vocab-learn-lessons button[data-lesson]");
   }
 
   // While right click is held, the wheel scrolls the card (it ignores the mouse) instead of the page.
@@ -18385,7 +22128,7 @@ if (page === "learn-vocab") {
     peekButton = button;
     peekButton.classList.add("is-peeked");
     peekCard.textContent = "";
-    peekCard.append(buildLessonPeek(Number(button.dataset.lesson)));
+    peekCard.append(button.dataset.custom ? buildCustomListPeek(button.dataset.custom) : buildLessonPeek(Number(button.dataset.lesson)));
     peekCard.classList.remove("hidden");
     placePeek();
   }
@@ -18432,6 +22175,7 @@ if (page === "learn-vocab") {
   });
 
   lessonList.addEventListener("scroll", () => {
+    if (filter === "custom") return;
     if (!lessonPaintQueued) {
       lessonPaintQueued = true;
       requestAnimationFrame(() => {
@@ -18527,20 +22271,20 @@ if (page === "learn-vocab") {
   }
 
   function loadWordHelp() {
-    const ready = (window.LEARN_READY || {}).vocabulary || [];
-    const files = [pair, `${lang}-${uiCode}`].filter((p) => ready.includes(p) && !(window.LEARN_VOCAB || {})[p]);
+    const files = [pair, `${lang}-${uiCode}`];
     let left = files.length;
-    if (!left) {
-      buildWordHelp();
-      return;
-    }
+    window.LEARN_VOCAB = window.LEARN_VOCAB || {};
     files.forEach((p) => {
-      const script = document.createElement("script");
-      script.src = `NewLearn/data/vocab-${p}.js?v=0.9`;
-      script.onload = script.onerror = () => {
+      loadLearnLessons("vocab", p).then((data) => {
+        window.LEARN_VOCAB[p] = data || [];
+        if (--left === 0) {
+          buildWordHelp();
+          files.forEach((name) => delete window.LEARN_VOCAB[name]);
+          releaseLearnBanks();
+        }
+      }).catch(() => {
         if (--left === 0) buildWordHelp();
-      };
-      document.head.appendChild(script);
+      });
     });
   }
 
@@ -18697,9 +22441,16 @@ if (page === "learn-vocab") {
     styleBtn.textContent = getTranslation(LEARN_STYLE_KEYS[settings.style]);
     styleBtn.classList.toggle("is-active", settings.style === "exponential");
     styleRows.forEach((row) => row.classList.toggle("hidden", row.dataset.learnStyle !== settings.style));
+    if (perLessonLabel) {
+      const key = area === "sentence" ? "learn.sentencesPerLesson" : area === "alphabet" ? "learn.lettersPerLesson" : "learn.wordsPerLesson";
+      perLessonLabel.dataset.i18n = key;
+      perLessonLabel.textContent = getTranslation(key);
+    }
+    if (perLessonInput) perLessonInput.value = String(settings.perLesson);
     readingRow.classList.toggle("hidden", !hasReadings);
     hintsRow.classList.toggle("hidden", !hasReadings);
     hintsInput.checked = settings.hints;
+    if (kanmojiInput) kanmojiInput.checked = learnShowKanmoji();
     if (originsInput) originsInput.checked = settings.viewOrigins;
     expInputs.forEach((input) => {
       input.value = String(settings.exp[input.dataset.exp]);
@@ -18715,10 +22466,23 @@ if (page === "learn-vocab") {
     settingsBtn.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) {
       syncSettingsInputs();
-      const first = settings.style === "exponential" ? expInputs[0] : goldenStreakInput;
+      const first = settings.style === "exponential" ? expInputs[0] : perLessonInput;
       first.focus();
       first.select();
     }
+  }
+
+  if (perLessonInput) {
+    perLessonInput.addEventListener("input", () => {
+      const n = Math.round(Number(perLessonInput.value));
+      if (!(n >= 1) || n === settings.perLesson) return;
+      settings.perLesson = Math.min(n, PER_LESSON_MAX);
+      saveSettings();
+      if (lessonSource.length) rebuildLessons();
+    });
+    perLessonInput.addEventListener("change", () => {
+      perLessonInput.value = String(settings.perLesson);
+    });
   }
 
   styleBtn.addEventListener("click", () => {
@@ -18774,6 +22538,13 @@ if (page === "learn-vocab") {
     render();
   });
 
+  if (kanmojiInput) {
+    kanmojiInput.addEventListener("change", () => {
+      setLearnShowKanmoji(kanmojiInput.checked);
+      render();
+    });
+  }
+
   if (originsInput) {
     originsInput.addEventListener("change", () => {
       settings.viewOrigins = originsInput.checked;
@@ -18792,6 +22563,10 @@ if (page === "learn-vocab") {
     saveStats();
     Array.from(completed).filter(ofLang).forEach((key) => completed.delete(key));
     saveCompleted();
+    if (alphabet) {
+      Array.from(linearDone).filter(ofLang).forEach((key) => linearDone.delete(key));
+      localStorage.setItem(ALPHABET_LINEAR_KEY, JSON.stringify(Array.from(linearDone)));
+    }
     Array.from(golden).filter(ofLang).forEach((key) => golden.delete(key));
     saveGolden();
     recentAnswers = [];
@@ -18944,11 +22719,13 @@ if (page === "learn-vocab") {
   // Counts, settings and the Exponential line are kept as they change; every render also keeps the streak and
   // the lesson in progress. One save per curriculum: { [pair]: { lesson, streak, progress, savedAt } }.
   function saveProgress() {
-    const progress = play && !play.exp && play.correct
-      ? { words: play.words.map((info) => info.key), correct: Array.from(play.correct), missed: Array.from(play.missed) }
-      : null;
     const saves = readJson(VOCAB_SAVE_KEY, {});
-    saves[pair] = { lesson: currentLesson, streak, progress, savedAt: Date.now() };
+    const existing = saves[pair] || {};
+    const custom = play && play.customId;
+    const progress = !custom && play && !play.exp && play.correct
+      ? { words: play.words.map((info) => info.key), correct: Array.from(play.correct), missed: Array.from(play.missed) }
+      : (custom ? existing.progress || null : null);
+    saves[pair] = { lesson: custom ? (existing.lesson || 0) : currentLesson, streak, progress, savedAt: Date.now() };
     localStorage.setItem(VOCAB_SAVE_KEY, JSON.stringify(saves));
   }
 
@@ -19054,6 +22831,7 @@ if (page === "learn-vocab") {
   // onWait receives 0..1 while the file is still being parsed. The bar creeps so a large file does not
   // sit at one number until the parse finishes.
   function loadPairScript(pairName, onWait) {
+    if (STORE !== "alphabet") return loadLearnLessons(STORE, pairName, onWait);
     const globalName = learnGlobalName();
     return new Promise((resolve) => {
       const ready = () => (window[globalName] || {})[pairName];
@@ -19096,14 +22874,253 @@ if (page === "learn-vocab") {
   }
 
   function showHeavyNote(on) {
-    if (!loadNote) return;
-    loadNote.hidden = !on;
-    loadNote.textContent = on ? getTranslation("learn.planHeavy") : "";
+    const note = on ? getTranslation("learn.planHeavy") : "";
+    if (loadNote) {
+      loadNote.hidden = !on;
+      loadNote.textContent = note;
+    }
+    const time = document.getElementById("vocab-learn-load-time");
+    if (time) time.title = note;
   }
 
   // A lesson plan deals every direction among the UI language and the selected languages.
   // Japanese and German vocabulary with an English UI gives EN-JP, JP-EN, EN-DE, DE-EN, JA-DE and DE-JA.
+  // One pass over an answer language fills every prompt direction and keeps only the rows the player needs.
+  function lessonNameFromKey(key) {
+    const line = rowByKey.get(key);
+    const word = line ? fieldsOf(line).word : "";
+    return learnLessonName(word);
+  }
+
+  // Every alphabet letter is grouped by Letters Per Lesson, including the last short group.
+  function packAlphabetLessons() {
+    const size = Math.max(1, settings.perLesson || 1);
+    const keys = items.slice();
+    lessonSource.length = 0;
+    keys.forEach((key) => lessonSource.push(key));
+    lessonSourceClosed = true;
+    lessonPackedSize = size;
+    lessons.length = 0;
+    for (let i = 0; i < keys.length; i += size) {
+      const slice = keys.slice(i, i + size);
+      const name = learnLessonName(slice.map((key) => lessonNameFromKey(key)).filter(Boolean).join(" "));
+      lessons.push({ name: name || String(lessons.length + 1), keys: slice });
+    }
+    lessonPacked = keys.length;
+    shownLessonCount = lessons.length;
+  }
+
+  // Linear lessons are slices of this list. A saved length keeps the same cards in the same order.
+  function rebuildLessons() {
+    const size = settings.perLesson;
+    const anchor = currentLesson && lessons[currentLesson - 1] ? lessons[currentLesson - 1].keys[0] : "";
+    if (alphabet) {
+      packAlphabetLessons();
+    } else {
+      lessonPackedSize = size;
+      lessons.length = 0;
+      const limit = lessonSourceClosed ? lessonSource.length : Math.floor(lessonSource.length / size) * size;
+      for (let i = 0; i < limit; i += size) {
+        const keys = lessonSource.slice(i, Math.min(i + size, lessonSource.length));
+        if (!keys.length) break;
+        lessons.push({ name: lessonNameFromKey(keys[0]) || String(lessons.length + 1), keys });
+      }
+      lessonPacked = limit;
+      shownLessonCount = lessons.length;
+    }
+    if (!practiceStarted || settings.style === "exponential") return;
+    let n = currentLesson || 1;
+    if (anchor) {
+      const index = lessonSource.indexOf(anchor);
+      if (index >= 0) n = Math.floor(index / size) + 1;
+    }
+    if (n > lessons.length) n = lessons.length;
+    if (n >= 1) {
+      autoNav = true;
+      startLesson(n);
+      autoNav = false;
+    } else if (loaded) renderSidebar();
+  }
+
+  function addLessonKeys(keys, name) {
+    if (!keys.length) return;
+    if (settings.perLesson !== lessonPackedSize) {
+      lessonSource.push(...keys);
+      rebuildLessons();
+      return;
+    }
+    lessonSource.push(...keys);
+    if (keys.length === lessonPackedSize && lessonPacked === lessonSource.length - keys.length) {
+      lessons.push({ name: name || lessonNameFromKey(keys[0]) || String(lessons.length + 1), keys: keys.slice() });
+      lessonPacked = lessonSource.length;
+      return;
+    }
+    while (lessonSource.length - lessonPacked >= lessonPackedSize) {
+      const slice = lessonSource.slice(lessonPacked, lessonPacked + lessonPackedSize);
+      lessons.push({ name: lessonNameFromKey(slice[0]) || String(lessons.length + 1), keys: slice });
+      lessonPacked += lessonPackedSize;
+    }
+  }
+
+  function closeLessonSource() {
+    if (lessonSourceClosed) return;
+    lessonSourceClosed = true;
+    if (lessonPacked >= lessonSource.length) return;
+    const keys = lessonSource.slice(lessonPacked);
+    lessons.push({ name: lessonNameFromKey(keys[0]) || String(lessons.length + 1), keys });
+    lessonPacked = lessonSource.length;
+  }
+
+  function rememberBuiltLessons() {
+    if (alphabet) {
+      packAlphabetLessons();
+      return;
+    }
+    lessons.forEach((lesson) => lessonSource.push(...lesson.keys));
+    lessonPacked = lessonSource.length;
+    lessonPackedSize = settings.perLesson;
+    const natural = lessons[0] ? lessons[0].keys.length : lessonPackedSize;
+    if (settings.perLesson !== natural) rebuildLessons();
+  }
+
+  // Walks each answer language a slice at a time. The first finished lesson opens immediately.
+  async function openWalk(answer, prompts) {
+    const learned = await loadLearnBank(STORE, answer);
+    const promptTexts = {};
+    const promptLetters = {};
+    for (const prompt of prompts) {
+      promptLetters[prompt] = LEARN_CODE_LETTER[prompt];
+      promptTexts[prompt] = (await loadLearnBank(STORE, prompt)).texts;
+    }
+    const state = {};
+    const seenKeys = {};
+    prompts.forEach((prompt) => {
+      state[prompt] = { count: 0, lesson: -1, group: [] };
+      seenKeys[prompt] = new Set();
+    });
+    return {
+      answer,
+      prompts,
+      learned,
+      promptTexts,
+      promptLetters,
+      state,
+      seenKeys,
+      size: settings.perLesson,
+      index: 0,
+      done: false,
+      keyPrefix: (prompt) => (planCodes.length ? prompt + "-" + answer + "|" : lang + "|"),
+    };
+  }
+
+  function stepWalk(walk, onLesson) {
+    const texts = walk.learned.texts;
+    const endAt = performance.now() + 12;
+    while (performance.now() < endAt && walk.index < texts.length) {
+      const text = texts[walk.index];
+      const packed = walk.learned.ids[walk.index];
+      for (let p = 0; p < walk.prompts.length; p++) {
+        const prompt = walk.prompts[p];
+        const link = firstLearnLink(packed, walk.promptLetters[prompt]);
+        const meaning = link ? walk.promptTexts[prompt][link - 1] : "";
+        if (!meaning) continue;
+        const sig = pairSignature(walk.answer, text, prompt, meaning);
+        if (seenPairs.has(sig)) continue;
+        seenPairs.add(sig);
+        const slot = walk.state[prompt];
+        if (!slot.count) {
+          slot.lesson += 1;
+          slot.group[slot.lesson] = { name: learnLessonName(text), keys: [] };
+        }
+        const line = text + "\t\t" + meaning;
+        const key = learnStudyKey(walk.keyPrefix(prompt), text, walk.seenKeys[prompt]);
+        rememberLine(key, line, fieldsOf(line));
+        const bucket = slot.group[slot.lesson];
+        if (!bucket.keys.includes(key)) bucket.keys.push(key);
+        slot.count += 1;
+        if (slot.count >= settings.perLesson) {
+          onLesson(walk.answer, prompt, bucket);
+          slot.count = 0;
+        }
+      }
+      walk.index += 1;
+    }
+    if (walk.index >= texts.length) {
+      walk.done = true;
+      walk.prompts.forEach((prompt) => {
+        const slot = walk.state[prompt];
+        if (slot.count > 0) onLesson(walk.answer, prompt, slot.group[slot.lesson]);
+        slot.count = 0;
+      });
+    }
+  }
+
+  // The same wording in either order is one pair, so the reverse direction is not a second card.
+  function pairSignature(answerLang, answerText, promptLang, promptText) {
+    if (answerLang < promptLang) return answerLang + "\0" + answerText + "\0" + promptLang + "\0" + promptText;
+    return promptLang + "\0" + promptText + "\0" + answerLang + "\0" + answerText;
+  }
+
+  async function runWalks(walks, jobs) {
+    const directionLessons = new Map();
+    const walksByAnswer = new Map(walks.map((walk) => [walk.answer, walk]));
+    jobs.forEach((job) => directionLessons.set(job.prompt + "-" + job.answer, []));
+    let merged = 0;
+    const rows = walks.reduce((sum, walk) => sum + walk.learned.texts.length, 0) || 1;
+    const onLesson = (answer, prompt, lesson) => {
+      const group = directionLessons.get(prompt + "-" + answer);
+      if (group) group.push(lesson);
+    };
+    const publish = () => {
+      let guard = 0;
+      while (guard < 1000000) {
+        guard += 1;
+        const index = merged;
+        let ready = true;
+        let any = false;
+        for (let j = 0; j < jobs.length; j++) {
+          const job = jobs[j];
+          const group = directionLessons.get(job.prompt + "-" + job.answer) || [];
+          const walk = walksByAnswer.get(job.answer);
+          if (group.length > index) any = true;
+          else if (!walk || !walk.done) ready = false;
+        }
+        if (!ready || !any) return;
+        const keys = [];
+        let name = "";
+        jobs.forEach((job) => {
+          const lesson = (directionLessons.get(job.prompt + "-" + job.answer) || [])[index];
+          if (!lesson) return;
+          if (!name) name = lesson.name;
+          lesson.keys.forEach((key) => {
+            if (!keys.includes(key)) keys.push(key);
+          });
+        });
+        merged += 1;
+        if (keys.length) addLessonKeys(keys, name || String(merged));
+      }
+    };
+    while (walks.some((walk) => !walk.done)) {
+      walks.forEach((walk) => {
+        if (!walk.done) stepWalk(walk, onLesson);
+      });
+      publish();
+      const seen = walks.reduce((sum, walk) => sum + walk.index, 0);
+      setLoadProgress(seen / rows * 100);
+      if (lessons.length) revealPractice();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    publish();
+    closeLessonSource();
+    releaseLearnBanks();
+    pendingLabels = null;
+  }
+
+  // A lesson plan keeps one direction of each language pair. The other direction is the same card,
+  // dealt from the back of that card, so EN-JA is not a second lesson after JA-EN.
+  // Japanese and German vocabulary with an English UI gives EN-JP, EN-DE and JA-DE.
   async function loadPlan() {
+    seenPairs = new Set();
     const langs = [getStoredLang(), ...planCodes];
     const jobs = [];
     langs.forEach((prompt) => {
@@ -19111,60 +23128,73 @@ if (page === "learn-vocab") {
         if (prompt !== answer) jobs.push({ prompt, answer });
       });
     });
+    const seenDirs = new Map();
+    jobs.forEach((job) => {
+      const dir = job.prompt < job.answer ? job.prompt + "-" + job.answer : job.answer + "-" + job.prompt;
+      const ui = getStoredLang();
+      const rank = job.answer === ui ? 1 : 0;
+      const prev = seenDirs.get(dir);
+      if (!prev || rank < prev.rank) seenDirs.set(dir, { job, rank });
+    });
+    const kept = new Set([...seenDirs.values()].map((entry) => entry.job));
+    for (let i = jobs.length - 1; i >= 0; i--) if (!kept.has(jobs[i])) jobs.splice(i, 1);
     const counts = (window.LEARN_COUNTS || {})[area] || {};
     const estimated = jobs.reduce((sum, job) => sum + (counts[job.answer] || 0), 0);
     heavy = estimated >= LEARN_HEAVY_ROWS;
     showHeavyNote(heavy);
     if (!heavy) pendingLabels = new Map();
-    const groups = [];
-    for (let i = 0; i < jobs.length; i++) {
-      const job = jobs[i];
-      const slice = 100 / jobs.length;
-      const base = i * slice;
-      const pairName = job.prompt + "-" + job.answer;
-      let data = await loadPairScript(pairName, (frac) => setLoadProgress(base + frac * slice * 0.65));
-      if (Array.isArray(data)) {
-        loadPrompt = job.prompt;
-        loadAnswer = job.answer;
-        const group = await ingest(data, (frac) => setLoadProgress(base + (0.65 + frac * 0.35) * slice));
-        groups.push(group);
+    if (STORE === "alphabet") {
+      for (let i = 0; i < jobs.length; i++) {
+        const job = jobs[i];
+        const slice = 100 / jobs.length;
+        const base = i * slice;
+        const pairName = job.prompt + "-" + job.answer;
+        let data = await loadPairScript(pairName, (frac) => setLoadProgress(base + frac * slice * 0.65));
+        if (Array.isArray(data)) {
+          loadPrompt = job.prompt;
+          loadAnswer = job.answer;
+          await ingest(data, (frac) => setLoadProgress(base + (0.65 + frac * 0.35) * slice));
+        }
+        data = null;
+        loadPrompt = null;
+        loadAnswer = null;
+        releasePair(pairName);
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
-      data = null;
-      loadPrompt = null;
-      loadAnswer = null;
-      releasePair(pairName);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      releaseLearnBanks();
+      pendingLabels = null;
+      packAlphabetLessons();
+      return;
     }
-    pendingLabels = null;
-    const max = groups.reduce((n, group) => Math.max(n, group.length), 0);
-    for (let i = 0; i < max; i++) {
-      const keys = [];
-      let name = "";
-      groups.forEach((group) => {
-        const lesson = group[i];
-        if (!lesson) return;
-        if (!name) name = lesson.name;
-        lesson.keys.forEach((key) => {
-          if (!keys.includes(key)) keys.push(key);
-        });
-      });
-      if (keys.length) lessons.push({ name: name || String(i + 1), keys });
-    }
+    const byAnswer = new Map();
+    jobs.forEach((job) => {
+      if (!byAnswer.has(job.answer)) byAnswer.set(job.answer, []);
+      byAnswer.get(job.answer).push(job.prompt);
+    });
+    const answers = [...byAnswer.keys()];
+    const walks = [];
+    for (let i = 0; i < answers.length; i++) walks.push(await openWalk(answers[i], byAnswer.get(answers[i])));
+    await runWalks(walks, jobs);
   }
 
   async function loadSingle() {
+    seenPairs = new Set();
     const total = ((window.LEARN_COUNTS || {})[area] || {})[lang] || 0;
     heavy = total >= LEARN_HEAVY_ROWS;
     showHeavyNote(heavy);
     if (!heavy) pendingLabels = new Map();
-    let data = await loadPairScript(pair, (frac) => setLoadProgress(frac * 65));
-    if (Array.isArray(data)) {
-      const group = await ingest(data, (frac) => setLoadProgress(65 + frac * 35));
-      group.forEach((lesson) => lessons.push(lesson));
+    if (STORE === "alphabet") {
+      let data = await loadPairScript(pair, (frac) => setLoadProgress(frac * 65));
+      if (Array.isArray(data)) await ingest(data, (frac) => setLoadProgress(65 + frac * 35));
+      data = null;
+      pendingLabels = null;
+      releasePair(pair);
+      releaseLearnBanks();
+      packAlphabetLessons();
+      return;
     }
-    data = null;
-    pendingLabels = null;
-    releasePair(pair);
+    const walk = await openWalk(lang, [getStoredLang()]);
+    await runWalks([walk], [{ prompt: getStoredLang(), answer: lang }]);
   }
 
   const wordModeLabel = settingsPanel.querySelector('label[for="vocab-learn-mode-word"]');
@@ -19176,22 +23206,65 @@ if (page === "learn-vocab") {
   render();
   const beginLesson = () => {
     if (loadScreen) loadScreen.classList.add("hidden");
-    if (sentences) loadWordHelp();
     loaded = true;
     expState = loadExpState();
     syncSettingsInputs();
+    autoNav = true;
     if (!items.length) render();
     else if (!restoreSave()) restart();
+    autoNav = false;
   };
+  const loadTrack = document.getElementById("vocab-learn-load-track");
+  const loadDone = document.getElementById("vocab-learn-load-done");
+  const loadTime = document.getElementById("vocab-learn-load-time");
   if (loadLabel) loadLabel.textContent = getTranslation(planCodes.length ? "learn.planLoading" : "learn.loading");
+  if (loadTime) loadTime.hidden = false;
   setLoadProgress(0);
-  if (loadScreen) loadScreen.classList.remove("hidden");
-  (planCodes.length ? loadPlan() : loadSingle()).then(() => {
+  const loadStarted = performance.now();
+  const showLoadTime = () => {
+    const seconds = (performance.now() - loadStarted) / 1000;
+    const time = (seconds < 10 ? seconds.toFixed(1) : String(Math.round(seconds))) + " s";
+    if (loadTrack) loadTrack.hidden = true;
+    if (loadPercent) loadPercent.hidden = true;
+    if (loadDone) {
+      loadDone.hidden = false;
+      loadDone.textContent = formatTranslation(planCodes.length ? "learn.planLoaded" : "learn.loadedIn", { time });
+    }
+  };
+  function revealPractice() {
+    if (!practiceStarted) {
+      practiceStarted = true;
+      beginLesson();
+      shownLessonCount = lessons.length;
+      expItemsSeen = items.length;
+      return;
+    }
+    if (lessons.length !== shownLessonCount) {
+      shownLessonCount = lessons.length;
+      if (loaded) renderSidebar();
+    }
+    if (!userMoved && settings.style !== "exponential") {
+      const saved = readJson(VOCAB_SAVE_KEY, {})[pair];
+      const n = saved && Math.round(Number(saved.lesson));
+      if (n > 1 && n <= lessonCount() && currentLesson !== n) {
+        autoNav = true;
+        restoreSave();
+        autoNav = false;
+      }
+    }
+    if (play && play.exp && play.finished && items.length > expItemsSeen) {
+      expItemsSeen = items.length;
+      dealExp();
+      render();
+    }
+  }
+  const finishLoad = () => {
     setLoadProgress(100);
-    beginLesson();
-  }).catch(() => {
-    beginLesson();
-  });
+    showLoadTime();
+    if (sentences) loadWordHelp();
+    revealPractice();
+  };
+  (planCodes.length ? loadPlan() : loadSingle()).then(finishLoad, finishLoad);
 }
 
 /* --------------------------------
@@ -19657,6 +23730,7 @@ if (page === "kanji") {
       const star = document.createElement("button");
       star.type = "button";
       star.className = "kanji-star";
+      bindStarCustomMenu(star, () => customKanjiItem(item));
 
       const glyph = document.createElement("div");
       glyph.className = "kanji-box-glyph";
@@ -20216,6 +24290,12 @@ if (page === "kanji") {
     paintStar(detailStar, toggleStar(detailItem.key));
     detailStarChanged = true;
   });
+  detailStar.addEventListener("contextmenu", (event) => {
+    if (!detailItem) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openCustomStarMenu(detailStar, customKanjiItem(detailItem));
+  });
   // While the window is open the page behind it must never scroll, even when the content is too short to scroll.
   detailModal.addEventListener("wheel", (e) => {
     const maxScroll = detailBody.scrollHeight - detailBody.clientHeight;
@@ -20297,6 +24377,7 @@ if (page === "kanji") {
 
   document.addEventListener("mousedown", (e) => {
     if (e.button !== 2) return;
+    if (e.target.closest && e.target.closest(".kanji-star, #kanji-detail-star, .custom-star-menu")) return;
     const box = peekTargetOf(e.target);
     if (!box) return;
     e.preventDefault();
@@ -20715,6 +24796,7 @@ if (page === "kanji-learn") {
   const expInputs = Array.from(settingsPanel.querySelectorAll("input[data-exp]"));
   const goldenStreakInput = document.getElementById("kanji-learn-golden-streak");
   const starModeInput = document.getElementById("kanji-learn-star-mode");
+  const kanmojiInput = document.getElementById("kanji-learn-kanmoji");
   const modeInputs = Array.from(settingsPanel.querySelectorAll("input[data-mode]"));
   const resetCountsBtn = document.getElementById("kanji-learn-reset-counts");
   const sidebarToggle = document.getElementById("kanji-learn-sidebar-toggle");
@@ -21032,9 +25114,32 @@ if (page === "kanji-learn") {
     render();
   }
 
+  function startCustomLesson(list) {
+    const modes = activeModes();
+    customPrepareList(list, (ready) => {
+      play = customPlayFromList(ready, modes);
+      play.customHints = !!settings.hints;
+      play.customRefresh = () => render();
+      play.customStarOn = (item) => item.kind === "kanji" && new Set(readJson(KANJI_STARRED_KEY, [])).has(item.key);
+      play.customToggleStar = (item) => {
+        if (item.kind !== "kanji") return;
+        const starred = new Set(readJson(KANJI_STARRED_KEY, []));
+        if (starred.has(item.key)) starred.delete(item.key);
+        else starred.add(item.key);
+        localStorage.setItem(KANJI_STARRED_KEY, JSON.stringify([...starred]));
+      };
+      if (!play.message) customDeal(play);
+      render();
+    });
+  }
+
   function dealNext() {
     if (play.exp) {
       dealExp();
+      return;
+    }
+    if (play.universal) {
+      customDeal(play);
       return;
     }
     const pool = remainingCards();
@@ -21055,6 +25160,11 @@ if (page === "kanji-learn") {
 
   // A wrong card comes back until it is answered correctly, but its symbol is not learned in this play.
   function settleRound(ok) {
+    if (play && play.universal) {
+      streak = customSettle(play, ok, streak);
+      render();
+      return;
+    }
     const round = play.round;
     const key = round.card.info.key;
     round.answered = true;
@@ -21234,6 +25344,13 @@ if (page === "kanji-learn") {
 
   // o: the shown definition is right. x: it is wrong, then the right one is picked from a short list.
   function judge(choice) {
+    if (play && play.universal) {
+      const round = play.round;
+      if (!round || round.answered || round.card.mode !== "definition") return;
+      round.choice = choice;
+      settleRound((choice === "o") === !!round.correctShown);
+      return;
+    }
     const round = play && play.round;
     if (!round || round.answered || round.card.mode !== "definition" || round.phase !== 1) return;
     round.choice = choice;
@@ -21292,10 +25409,20 @@ if (page === "kanji-learn") {
     return button;
   }
 
+  function paintCustomLessons() {
+    paintUniversalCustomLessons(lessonList, play);
+  }
+
   function renderSidebar() {
-    filterBtn.textContent = getTranslation(filter === "completed" ? "kanji.learnCompleted" : "kanji.learnTodo");
+    const label = filter === "completed" ? "kanji.learnCompleted" : filter === "custom" ? "kanji.learnCustom" : "kanji.learnTodo";
+    filterBtn.textContent = getTranslation(label);
     filterBtn.classList.toggle("is-active", filter === "completed");
-    filterBtn.setAttribute("aria-pressed", filter === "completed" ? "true" : "false");
+    filterBtn.classList.toggle("is-custom", filter === "custom");
+    filterBtn.setAttribute("aria-pressed", filter === "todo" ? "false" : "true");
+    if (filter === "custom") {
+      paintCustomLessons();
+      return;
+    }
 
     const scrollTop = lessonList.scrollTop;
     lessonList.textContent = "";
@@ -21328,6 +25455,7 @@ if (page === "kanji-learn") {
   function fillDefinition(node, definition, reveal) {
     const glyph = el("span", `kanji-play-reveal${reveal ? "" : " is-hidden"}`, definition.char);
     glyph.lang = definition.key.startsWith("C:") ? "zh-CN" : "ja";
+    if (reveal) paintKanjiStamp(glyph, definition.key, definition.char, () => render());
     if (!reveal) glyph.setAttribute("aria-hidden", "true");
     node.append(glyph, el("span", "kanji-play-def", definition.label));
   }
@@ -21343,11 +25471,11 @@ if (page === "kanji-learn") {
 
     const judges = el("div", "kanji-play-actions");
     ["o", "x"].forEach((choice) => {
-      const button = el("button", "transfer-lang-chip kanji-play-judge", choice);
+      const button = el("button", "transfer-lang-chip kanji-play-judge");
       button.type = "button";
+      paintOxJudge(button, choice);
       button.disabled = round.answered || round.phase !== 1;
       if (round.choice === choice) button.classList.add("is-active");
-      appendOxHint(button, choice);
       button.addEventListener("click", () => judge(choice));
       judges.append(button);
     });
@@ -21412,17 +25540,32 @@ if (page === "kanji-learn") {
       return wrap;
     }
     if (play.finished) {
-      let done = getTranslation(isLessonCompleted(play.lesson) ? "kanji.playLessonComplete" : "kanji.playStarredDone");
+      let done = getTranslation(play.customId || isLessonCompleted(play.lesson) ? "kanji.playLessonComplete" : "kanji.playStarredDone");
       if (play.missed && play.missed.size) {
         const total = play.symbols.length;
         done = formatTranslation("kanji.playLessonMissed", { learned: total - play.missed.size, total });
       }
       const actions = el("div", "kanji-play-actions");
-      actions.append(chipButton("kanji.playAgain", () => startLesson(play.lesson, true)));
-      const next = nextTodoLesson(play.lesson);
-      if (next) actions.append(chipButton("kanji.playNextLesson", () => startLesson(next), "is-active kanji-play-next"));
+      actions.append(chipButton("kanji.playAgain", () => {
+        if (play.customId) {
+          const list = customLists().find((item) => item.id === play.customId);
+          if (list) startCustomLesson(list);
+        } else startLesson(play.lesson, true);
+      }));
+      if (!play.customId) {
+        const next = nextTodoLesson(play.lesson);
+        if (next) actions.append(chipButton("kanji.playNextLesson", () => startLesson(next), "is-active kanji-play-next"));
+      }
       wrap.append(el("div", "kanji-play-done", done), actions);
       return wrap;
+    }
+    if (play.universal) {
+      play.customView = {
+        streak,
+        accuracy: accuracyText(),
+        left: play.cards.filter((card) => !play.correct.has(card.id)).length
+      };
+      return renderCustomPlay(play, (ok) => settleRound(ok));
     }
 
     const { round } = play;
@@ -21461,19 +25604,28 @@ if (page === "kanji-learn") {
       localStorage.setItem(KANJI_STARRED_KEY, JSON.stringify([...starred]));
       paintKanjiStar();
     });
+    bindStarCustomMenu(starBtn, customKanjiItem(info));
     meta.append(starBtn);
 
     const question = el("div", "kanji-play-question");
     if (card.mode === "kanji") {
+      const mark = el("div", "");
+      paintKanjiStamp(mark, info.key, info.char, () => render(), false);
+      if (mark.childNodes.length) question.append(mark);
       const reading = el("div", "kanji-play-text", info.readingText);
       if (!info.pinyin) reading.lang = "ja";
       question.append(reading);
     } else {
       const glyph = el("div", "kanji-play-glyph", info.char);
       glyph.lang = info.lang;
+      paintKanjiStamp(glyph, info.key, info.char, () => render());
       question.append(glyph);
     }
-    if (card.mode !== "definition" && info.label) question.append(el("div", "kanji-play-meaning", info.label));
+    if (card.mode !== "definition" && info.label) {
+      const meaning = el("div", "kanji-play-meaning", info.label);
+      paintLearnKanmoji(meaning, info.label, getStoredLang(), () => render());
+      question.append(meaning);
+    }
     wrap.append(meta, question);
 
     if (card.mode === "definition") renderDefinitionRound(wrap, round);
@@ -21502,13 +25654,15 @@ if (page === "kanji-learn") {
 
   function renderLesson() {
     body.textContent = "";
-    if (!items.length) {
+    if (!items.length && !(play && play.customId)) {
       body.appendChild(el("div", "kanji-empty", getTranslation("kanji.noLearnList")));
       return;
     }
-    if (!play || (!play.exp && !currentLesson)) return;
+    if (!play || (!play.exp && !currentLesson && !play.customId)) return;
     const head = el("div", "kanji-learn-lesson-head");
-    if (play.exp) {
+    if (play.customId) {
+      head.append(el("h2", "", play.customName || ""));
+    } else if (play.exp) {
       const known = items.filter(([key]) => completed.has(key)).length;
       const goldenCount = items.filter(([key]) => golden.has(key)).length;
       const counts = el("span", "kanji-learn-known");
@@ -21524,12 +25678,11 @@ if (page === "kanji-learn") {
     focusPlay();
   }
 
-  // Exponential has no lessons, so the lesson list and its toggle are hidden.
+  // The lesson list stays up during Exponential so custom lessons remain available.
   function render() {
-    const exp = settings.style === "exponential";
-    sidebar.classList.toggle("hidden", exp);
-    sidebarToggle.classList.toggle("hidden", exp);
-    if (!exp) renderSidebar();
+    sidebar.classList.remove("hidden");
+    sidebarToggle.classList.remove("hidden");
+    renderSidebar();
     renderLesson();
     saveProgress();
   }
@@ -21544,7 +25697,7 @@ if (page === "kanji-learn") {
     if (oxKeybindDialogOpen()) return;
     if (!play || !play.round || !play.round.answered || e.button !== 0) return;
     if (!settingsPanel.classList.contains("hidden")) return;
-    if (e.target.closest && e.target.closest(".navbar, .kanji-learn-bar, .kanji-learn-sidebar, .kanji-learn-settings-panel, .learn-play-star")) return;
+    if (e.target.closest && e.target.closest(".navbar, .kanji-learn-bar, .kanji-learn-sidebar, .kanji-learn-settings-panel, .learn-play-star, .custom-star-menu, .custom-status-menu, .learn-kanmoji-token, .learn-kanmoji-picker")) return;
     if (!e.target.closest(".kanji-play") && e.target.closest("a, button, input, select, textarea, label")) return;
     e.preventDefault();
     e.stopPropagation();
@@ -21595,13 +25748,26 @@ if (page === "kanji-learn") {
 
   sidebarToggle.addEventListener("click", () => setSidebarOpen(sidebar.classList.contains("is-collapsed")));
 
-  filterBtn.addEventListener("click", () => {
-    filter = filter === "completed" ? "todo" : "completed";
+  bindStatusFilter(filterBtn, () => filter, (next) => {
+    filter = next;
     lessonList.scrollTop = 0;
     renderSidebar();
   });
+  customListListener = () => {
+    if (play && play.customId && !customLists().some((item) => item.id === play.customId)) {
+      play = null;
+      body.textContent = "";
+    }
+    renderSidebar();
+  };
 
   lessonList.addEventListener("click", (e) => {
+    const custom = e.target.closest("button[data-custom]");
+    if (custom) {
+      const list = customLists().find((item) => item.id === custom.dataset.custom);
+      if (list) startCustomLesson(list);
+      return;
+    }
     const button = e.target.closest("button[data-lesson]");
     if (button) startLesson(Number(button.dataset.lesson));
   });
@@ -21613,7 +25779,8 @@ if (page === "kanji-learn") {
   let suppressContextMenu = false;
 
   function lessonButtonOf(node) {
-    return node && node.closest ? node.closest("#kanji-learn-lessons button[data-lesson]") : null;
+    if (!node || !node.closest) return null;
+    return node.closest("#kanji-learn-lessons button[data-custom], #kanji-learn-lessons button[data-lesson]");
   }
 
   function buildLessonPeek(n) {
@@ -21657,7 +25824,7 @@ if (page === "kanji-learn") {
     peekButton = button;
     peekButton.classList.add("is-peeked");
     peekCard.textContent = "";
-    peekCard.append(buildLessonPeek(Number(button.dataset.lesson)));
+    peekCard.append(button.dataset.custom ? buildCustomListPeek(button.dataset.custom) : buildLessonPeek(Number(button.dataset.lesson)));
     peekCard.classList.remove("hidden");
     placePeek();
   }
@@ -21724,6 +25891,7 @@ if (page === "kanji-learn") {
     });
     goldenStreakInput.value = String(settings.goldenStreak);
     starModeInput.checked = settings.starMode;
+    if (kanmojiInput) kanmojiInput.checked = learnShowKanmoji();
     modeInputs.forEach((input) => {
       input.checked = settings.modes[input.dataset.mode];
     });
@@ -21798,6 +25966,13 @@ if (page === "kanji-learn") {
     restart();
   });
 
+  if (kanmojiInput) {
+    kanmojiInput.addEventListener("change", () => {
+      setLearnShowKanmoji(kanmojiInput.checked);
+      if (play && play.round) render();
+    });
+  }
+
   modeInputs.forEach((input) => {
     input.addEventListener("change", () => {
       settings.modes[input.dataset.mode] = input.checked;
@@ -21862,11 +26037,19 @@ if (page === "kanji-learn") {
 
   // Runs on every render, so every answer (and every lesson change) is saved right away.
   function saveProgress() {
-    const progress = play && !play.exp && play.correct
-      ? { symbols: play.symbols.map((info) => info.key), correct: Array.from(play.correct), missed: Array.from(play.missed) }
-      : null;
     const saves = readSaves();
-    saves[saveId] = { perLesson: settings.perLesson, lesson: currentLesson, streak, progress, savedAt: Date.now() };
+    const existing = saves[saveId] || {};
+    const custom = play && play.customId;
+    const progress = !custom && play && !play.exp && play.correct
+      ? { symbols: play.symbols.map((info) => info.key), correct: Array.from(play.correct), missed: Array.from(play.missed) }
+      : (custom ? existing.progress || null : null);
+    saves[saveId] = {
+      perLesson: settings.perLesson,
+      lesson: custom ? (existing.lesson || 0) : currentLesson,
+      streak,
+      progress,
+      savedAt: Date.now()
+    };
     localStorage.setItem(KANJI_LEARN_SAVE_KEY, JSON.stringify(saves));
   }
 

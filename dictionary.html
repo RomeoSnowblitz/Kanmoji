@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kanji Builder</title>
-  <link rel="stylesheet" href="style.css?v=0.21" />
-  <script src="translations.js?v=0.7"></script>
+  <link rel="stylesheet" href="style.css?v=0.28" />
+  <script src="translations.js?v=0.20"></script>
   <script defer src="symbols.js?v=0.7"></script>
-  <script defer src="world-dictionary-data.js?v=0.7"></script>
-  <script defer src="script.js?v=0.23"></script>
+  <script defer src="world-dictionary-data.js?v=0.11"></script>
+  <script defer src="script.js?v=0.56"></script>
 </head>
 <body data-page="dictionary">
   <header class="navbar">
@@ -47,9 +47,9 @@
   </header>
 
   <main>
-    <span class="app-version">v0.7b</span>
+    <span class="app-version">v0.7c</span>
     <h1 data-i18n="dictionary.dictionaryTitle">Dictionary</h1>
-    <p class="dictionary-select-note" data-i18n="dictionary.selectLanguagesNote">Please Select Languages in "Show Language(s)" then hit "Search" or hit the "Enter" Key</p>
+    <p class="dictionary-select-note" data-i18n="dictionary.selectLanguagesNote">The word list follows the interface language and updates when you change a setting. Press Enter to search.</p>
 
     <div id="dictionary-loading" class="dictionary-loading hidden" role="status" aria-live="polite" aria-busy="false">
       <div class="dictionary-loading-card">
@@ -90,10 +90,13 @@
           <option value="tempstamped" data-i18n="dictionary.showTempstampedWords">Show Tempstamped Words</option>
         </select>
         <details id="dictionary-language-filter" class="dictionary-language-filter">
-          <summary data-i18n="dictionary.showLanguages">Show Language(s)</summary>
+          <summary data-i18n="dictionary.showLanguages">Show Translation(s) For</summary>
           <div id="dictionary-language-options" class="dictionary-language-options"></div>
         </details>
-        <button id="dictionary-search-btn" type="button" class="btn-primary" data-i18n="dictionary.searchButton">Search</button>
+        <details id="dictionary-organize" class="dictionary-language-filter">
+          <summary data-i18n="dictionary.organize">Organize</summary>
+          <div id="dictionary-organize-options" class="dictionary-language-options"></div>
+        </details>
       </div>
       <p id="dictionary-results-status" class="dictionary-results-status"></p>
     </section>
@@ -115,6 +118,41 @@
       <button id="dictionary-page-next-bottom" type="button" data-i18n="dictionary.nextPage">Next</button>
     </nav>
   </main>
+
+
+  <div id="concept-detail" class="kanji-detail-modal hidden">
+    <div class="kanji-detail" role="dialog" aria-modal="true" aria-labelledby="concept-detail-body">
+      <div class="kanji-detail-toolbar">
+        <button type="button" id="concept-detail-close" class="transfer-lang-chip" data-i18n="dictionary.close">Close</button>
+        <button type="button" id="concept-detail-save" class="transfer-lang-chip" data-i18n="dictionary.save">Save</button>
+        <div class="kanji-detail-nav">
+          <button type="button" id="concept-detail-prev" class="transfer-lang-chip kanji-detail-arrow" data-i18n-title="dictionary.previousPage" title="Previous">
+            <span class="kanji-detail-arrow-sign">‹</span>
+            <span id="concept-detail-prev-word" class="kanji-detail-arrow-glyph"></span>
+          </button>
+          <span id="concept-detail-position" class="kanji-detail-position"></span>
+          <button type="button" id="concept-detail-next" class="transfer-lang-chip kanji-detail-arrow" data-i18n-title="dictionary.nextPage" title="Next">
+            <span id="concept-detail-next-word" class="kanji-detail-arrow-glyph"></span>
+            <span class="kanji-detail-arrow-sign">›</span>
+          </button>
+        </div>
+      </div>
+      <div id="concept-detail-body"></div>
+    </div>
+  </div>
+  <div id="concept-peek" class="kanji-peek hidden" aria-hidden="true"></div>
+  <div id="concept-kanmoji-box" class="word-context-box hidden">
+    <div class="word-context-content concept-kanmoji-editor">
+      <h2 data-i18n="dictionary.editKanmoji">Edit Kanmoji</h2>
+      <div id="concept-kanmoji-current" class="concept-kanmoji-current"></div>
+      <div id="concept-kanmoji-grid" class="concept-kanmoji-grid"></div>
+      <div class="word-context-actions">
+        <button type="button" id="concept-kanmoji-clear" data-i18n="dictionary.clearKanmoji">Clear</button>
+        <button type="button" id="concept-kanmoji-save" data-i18n="dictionary.save">Save</button>
+        <button type="button" id="concept-kanmoji-cancel" data-i18n="dictionary.cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Right-click word popup: note + delete -->
   <div id="word-context-box" class="word-context-box hidden">

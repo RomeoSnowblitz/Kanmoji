@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kanji Builder</title>
-  <link rel="stylesheet" href="style.css?v=0.21" />
-  <script src="translations.js?v=0.8"></script>
+  <link rel="stylesheet" href="style.css?v=0.29" />
+  <script src="translations.js?v=0.20"></script>
   <script defer src="symbols.js?v=0.7"></script>
-  <script defer src="world-dictionary-data.js?v=0.7"></script>
-  <script defer src="script.js?v=0.23"></script>
+  <script defer src="world-dictionary-data.js?v=0.11"></script>
+  <script defer src="script.js?v=0.56"></script>
 </head>
 <body data-page="create">
   <header class="navbar">
@@ -46,7 +46,7 @@
   </header>
 
   <main>
-    <span class="app-version">v0.7b</span>
+    <span class="app-version">v0.7c</span>
     <h1 data-i18n="create.createTitle">Create a New Word</h1>
 
     <section class="create-lookup-box">
@@ -64,8 +64,10 @@
         </div>
       </div>
       <div id="create-dictionary-results" class="create-dictionary-results hidden"></div>
+      <div id="create-concept-info" class="create-concept-info hidden"></div>
       <div id="create-editing-status" class="create-editing-status hidden">
         <span id="create-editing-status-text"></span>
+        <button id="create-save-kanmoji" type="button" class="hidden" data-i18n="create.saveKanmoji">Save Kanmoji</button>
         <button id="create-clear-edit" type="button" data-i18n="create.clearRetrievedWord">Clear retrieved word</button>
       </div>
     </section>

@@ -4,10 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kanji Builder</title>
-  <link rel="stylesheet" href="style.css?v=0.21" />
-  <script src="translations.js?v=0.14"></script>
-  <script src="NewLearn/data/ready.js?v=0.10"></script>
-  <script defer src="script.js?v=0.23"></script>
+  <link rel="stylesheet" href="style.css?v=0.41" />
+  <style>
+    .vocab-learn-load-time { display: flex; align-items: center; gap: 0.45rem; margin: 0 0 0 0.75rem; align-self: center; min-width: 0; font-size: 0.85rem; opacity: 1; }
+    .vocab-learn-load-track { width: 7.5rem; height: 0.45rem; flex: none; border-radius: 999px; background: color-mix(in srgb, var(--accent-color) 18%, transparent); overflow: hidden; }
+    .vocab-learn-load-percent { color: var(--accent-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .vocab-learn-load-done { opacity: 0.75; white-space: nowrap; }
+  </style>
+  <script src="translations.js?v=0.21"></script>
+  <script src="NewLearn/data/ready.js?v=0.15"></script>
+  <script defer src="NewLearn/data/ja-readings.js?v=0.1"></script>
+  <script defer src="script.js?v=0.56"></script>
 </head>
 <body data-page="learn-vocab">
   <header class="navbar">
@@ -45,12 +52,19 @@
   </header>
 
   <main>
-    <span class="app-version">v0.7b</span>
+    <span class="app-version">v0.7c</span>
     <div class="kanji-learn-bar">
       <div class="kanji-learn-actions">
         <a href="learn.html" class="transfer-lang-chip" data-i18n="learn.backToLearn">← Back to Learn</a>
         <button type="button" id="vocab-learn-sidebar-toggle" class="transfer-lang-chip kanji-learn-icon-btn" aria-controls="vocab-learn-sidebar" aria-expanded="true" data-i18n-title="kanji.toggleLessons" title="Show or hide lessons" aria-label="Show or hide lessons">☰</button>
         <h1 id="vocab-learn-title" class="vocab-learn-title">Vocabulary</h1>
+        <div id="vocab-learn-load-time" class="vocab-learn-load-time" hidden>
+          <div id="vocab-learn-load-track" class="vocab-learn-load-track" aria-hidden="true">
+            <div id="vocab-learn-loading-bar" class="dictionary-loading-bar"></div>
+          </div>
+          <span id="vocab-learn-loading-percent" class="vocab-learn-load-percent">0%</span>
+          <span id="vocab-learn-load-done" class="vocab-learn-load-done" hidden></span>
+        </div>
       </div>
       <div class="kanji-learn-actions">
         <button type="button" id="vocab-learn-edit" class="transfer-lang-chip hidden">Edit</button>
@@ -65,6 +79,10 @@
           <div class="kanji-learn-settings-row">
             <span data-i18n="kanji.learnStyle">Learn Style</span>
             <button type="button" id="vocab-learn-style" class="transfer-lang-chip kanji-learn-style">Linear</button>
+          </div>
+          <div class="kanji-learn-settings-row" data-learn-style="linear">
+            <label for="vocab-learn-per-lesson" id="vocab-learn-per-lesson-label" data-i18n="learn.wordsPerLesson">Words Per Lesson</label>
+            <input type="number" id="vocab-learn-per-lesson" min="1" max="200" step="1" />
           </div>
           <div class="kanji-learn-settings-row" data-learn-style="exponential">
             <label for="vocab-learn-positive-jump" data-i18n="kanji.positiveJump">Positive Jump</label>
@@ -93,6 +111,10 @@
           <div class="kanji-learn-settings-row" id="vocab-learn-hints-row">
             <label for="vocab-learn-hints" data-i18n="learn.hints">Hints (show the reading or meaning)</label>
             <input type="checkbox" id="vocab-learn-hints" />
+          </div>
+          <div class="kanji-learn-settings-row">
+            <label for="vocab-learn-kanmoji" data-i18n="learn.showKanmoji">Show Kanmoji</label>
+            <input type="checkbox" id="vocab-learn-kanmoji" />
           </div>
           <div class="kanji-learn-settings-row">
             <label for="vocab-learn-origins" data-i18n="learn.viewOrigins">View Origins</label>
@@ -149,9 +171,9 @@
       <div class="dictionary-loading-card">
         <p id="vocab-learn-loading-label" class="dictionary-loading-label"></p>
         <div class="dictionary-loading-track" aria-hidden="true">
-          <div id="vocab-learn-loading-bar" class="dictionary-loading-bar"></div>
+          <div class="dictionary-loading-bar"></div>
         </div>
-        <p id="vocab-learn-loading-percent" class="dictionary-loading-percent">0%</p>
+        <p class="dictionary-loading-percent">0%</p>
         <p id="vocab-learn-loading-note" class="learn-plan-note hidden"></p>
       </div>
     </div>

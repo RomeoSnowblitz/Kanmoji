@@ -4,10 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kanji Builder</title>
-  <link rel="stylesheet" href="style.css?v=0.21" />
-  <script src="translations.js?v=0.9"></script>
+  <link rel="stylesheet" href="style.css?v=0.41" />
+  <script src="translations.js?v=0.21"></script>
   <script defer src="kanji-data.js?v=0.7"></script>
-  <script defer src="script.js?v=0.23"></script>
+  <script defer src="script.js?v=0.56"></script>
 </head>
 <body data-page="kanji-learn">
   <header class="navbar">
@@ -45,7 +45,7 @@
   </header>
 
   <main>
-    <span class="app-version">v0.7b</span>
+    <span class="app-version">v0.7c</span>
     <div class="kanji-learn-bar">
       <div class="kanji-learn-actions">
         <a href="kanji.html" class="transfer-lang-chip" data-i18n="kanji.backToKanji">← Back to Kanji</a>
@@ -95,6 +95,10 @@
           <div class="kanji-learn-settings-row">
             <label for="kanji-learn-mode-reading" data-i18n="kanji.readingMode">Reading mode (type reading)</label>
             <input type="checkbox" id="kanji-learn-mode-reading" data-mode="reading" />
+          </div>
+          <div class="kanji-learn-settings-row">
+            <label for="kanji-learn-kanmoji" data-i18n="learn.showKanmoji">Show Kanmoji</label>
+            <input type="checkbox" id="kanji-learn-kanmoji" />
           </div>
           <button type="button" id="kanji-learn-reset-counts" class="transfer-lang-chip kanji-learn-reset" data-i18n="kanji.resetCounts">Reset Counts</button>
         </div>

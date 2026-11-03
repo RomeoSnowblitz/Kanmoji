@@ -6,6 +6,6 @@ window.LEARN_READY = {
 };
 window.LEARN_COUNTS = {
   alphabet: {zh:81,en:26,fr:26,de:30,it:26,ja:208,ko:72,pt:26,ru:33,es:27},
-  vocabulary: {zh:136878,en:154507,fr:157057,de:157898,it:152447,ja:153150,ko:205249,pt:149128,ru:183962,es:152825},
+  vocabulary: {zh:22956,en:24510,fr:45002,de:58187,it:47212,ja:72943,ko:138880,pt:38317,ru:82252,es:44504},
   sentence: {zh:350888,en:356573,fr:388907,de:352901,it:391588,ja:414343,ko:418391,pt:396363,ru:392878,es:395495}
 };
